@@ -77,6 +77,10 @@ export default function Footer() {
               Twitter / X
             </a>
             <span>·</span>
+            <a href="https://www.geckoterminal.com/base/pools/0x5a86f04dbd3e6b532e4397eb605a4c23136dc913e0a60b65547842d2ce7876e8" target="_blank" rel="noopener noreferrer" className="hover:text-white/50 transition">
+              CoinGecko
+            </a>
+            <span>·</span>
             <a href="https://dexscreener.com/base/0x5a86f04dbd3e6b532e4397eb605a4c23136dc913e0a60b65547842d2ce7876e8" target="_blank" rel="noopener noreferrer" className="hover:text-white/50 transition">
               DexScreener
             </a>
