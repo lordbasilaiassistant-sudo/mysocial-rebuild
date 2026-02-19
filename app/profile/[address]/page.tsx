@@ -5,6 +5,11 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
 
+interface ProfileSubscription {
+  pro: boolean;
+  activeTiers: string[];
+}
+
 function shortAddr(addr: string) {
   return addr.slice(0, 6) + "…" + addr.slice(-4);
 }
@@ -16,6 +21,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [friends, setFriends] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profileSub, setProfileSub] = useState<ProfileSubscription | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -31,6 +37,19 @@ export default function ProfilePage() {
       }
     })();
   }, [profileAddr, address]);
+
+  // Check if the profile user has a Pro subscription
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`https://thryx.mom/api/subscribe?wallet=${profileAddr}`);
+        const data = await res.json();
+        setProfileSub({ pro: data.pro || false, activeTiers: data.activeTiers || ['free'] });
+      } catch {
+        setProfileSub({ pro: false, activeTiers: ['free'] });
+      }
+    })();
+  }, [profileAddr]);
 
   if (loading) {
     return (
@@ -98,9 +117,21 @@ export default function ProfilePage() {
 
         {/* Name + meta */}
         <div className="flex-1 min-w-0 pb-1">
-          <h1 className="text-3xl md:text-4xl font-black text-white truncate">
-            {profile?.display_name || shortAddr(profileAddr)}
-          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-3xl md:text-4xl font-black text-white truncate">
+              {profile?.display_name || shortAddr(profileAddr)}
+            </h1>
+            {profileSub?.pro && (
+              <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 text-xs font-bold">
+                ⚡ Pro
+              </span>
+            )}
+            {profileSub?.activeTiers?.includes('ultimate') && (
+              <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-400 text-xs font-bold">
+                💎 Ultimate
+              </span>
+            )}
+          </div>
           <p className="text-xs font-mono text-white/20 mt-1 truncate">{profileAddr}</p>
         </div>
 
