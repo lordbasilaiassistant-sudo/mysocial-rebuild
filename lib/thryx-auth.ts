@@ -54,6 +54,25 @@ export async function verifySignature(walletAddress: string, signature: string, 
   return res.json();
 }
 
+// --- Token Verification (server-side) ---
+
+export async function verifyToken(token: string): Promise<{ address: string } | null> {
+  try {
+    const res = await fetch(`${AUTH_API}/api/user/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.expired) return null;
+    // Extract wallet address from the token response
+    if (data.wallet) return { address: data.wallet.toLowerCase() };
+    if (data.address) return { address: data.address.toLowerCase() };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // --- Local Storage ---
 
 export function getStoredAuth(): { token: string; wallet: string } | null {
