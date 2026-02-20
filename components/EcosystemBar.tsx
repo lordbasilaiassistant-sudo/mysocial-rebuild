@@ -59,7 +59,7 @@ export default function EcosystemBar({ currentSite }: EcosystemBarProps) {
 
   return (
     <div
-      className="w-full z-[100] border-b select-none"
+      className="fixed top-0 left-0 w-full z-[100] border-b select-none"
       style={{
         background: "var(--void, #09090b)",
         borderColor: "var(--border, rgba(255,255,255,0.06))",
