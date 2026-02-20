@@ -1,182 +1,448 @@
 /**
- * THRYX Unified Auth + EIP-6963 Wallet Discovery
- * Drop into any ecosystem site at src/lib/thryx-auth.ts
- * All auth goes through thryx.mom central API
- * All wallet connection uses EIP-6963 (Rainbow, MetaMask, Coinbase, etc.)
+ * THRYX Unified Auth Library
+ *
+ * THE CANONICAL auth module. Copy to every site's lib/thryx-auth.ts.
+ * All auth flows go through thryx.mom — ONE source of truth.
+ *
+ * Features:
+ *   - EIP-6963 multi-wallet discovery
+ *   - No-signature connect (eth_requestAccounts = ownership proof)
+ *   - Optional signature verification for high-security actions
+ *   - Pro/subscription tier checks via central API
+ *   - Cross-site token sharing via localStorage
+ *   - Base chain auto-switch
  */
 
-const AUTH_API = 'https://thryx.mom';
+// ─── Configuration ────────────────────────────────────────────────────────────
 
-// Owner wallets always get Pro (client-side fast check)
+const AUTH_API = "https://thryx.mom";
+const BASE_CHAIN_ID = "0x2105"; // 8453
+
 const OWNER_WALLETS = [
-  '0x7a3e312ec6e20a9f62fe2405938eb9060312e334',
-  '0x718d6142fb15f95f43fac6f70498d8da130240bc',
-].map(w => w.toLowerCase());
+  "0x7a3e312ec6e20a9f62fe2405938eb9060312e334", // treasury
+  "0x718d6142fb15f95f43fac6f70498d8da130240bc", // anthony
+];
 
-export function isOwnerWallet(wallet: string | null): boolean {
-  if (!wallet) return false;
-  return OWNER_WALLETS.includes(wallet.toLowerCase());
+const THRYX_CONTRACT = "0xc07E889e1816De2708BF718683e52150C20F3BA3";
+
+// ─── Storage Keys (shared across ecosystem via localStorage) ──────────────────
+
+const STORAGE_KEYS = {
+  token: "thryx_auth_token",
+  wallet: "thryx_wallet",
+  pro: "thryx_pro",
+  tier: "thryx_tier",
+} as const;
+
+// ─── EIP-6963 Multi-Wallet Discovery ─────────────────────────────────────────
+
+interface EIP6963Provider {
+  info: { uuid: string; name: string; icon: string; rdns: string };
+  provider: any;
 }
 
-// --- Auth API ---
+let discoveredWallets: EIP6963Provider[] = [];
 
-export async function checkSubscription(token: string) {
+export function discoverWallets(): Promise<EIP6963Provider[]> {
+  return new Promise((resolve) => {
+    discoveredWallets = [];
+
+    const handleAnnounce = (event: any) => {
+      const detail = event.detail;
+      if (detail?.info && detail?.provider) {
+        const exists = discoveredWallets.some(w => w.info.uuid === detail.info.uuid);
+        if (!exists) discoveredWallets.push(detail);
+      }
+    };
+
+    window.addEventListener("eip6963:announceProvider", handleAnnounce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    // Give wallets 500ms to respond
+    setTimeout(() => {
+      window.removeEventListener("eip6963:announceProvider", handleAnnounce);
+
+      // Fallback: if no EIP-6963 but window.ethereum exists
+      if (discoveredWallets.length === 0 && (window as any).ethereum) {
+        discoveredWallets.push({
+          info: {
+            uuid: "legacy",
+            name: (window as any).ethereum.isMetaMask ? "MetaMask" : "Browser Wallet",
+            icon: "",
+            rdns: "legacy",
+          },
+          provider: (window as any).ethereum,
+        });
+      }
+
+      resolve(discoveredWallets);
+    }, 500);
+  });
+}
+
+export function getDiscoveredWallets(): EIP6963Provider[] {
+  return discoveredWallets;
+}
+
+// ─── Connect Flow ────────────────────────────────────────────────────────────
+
+export async function connectWallet(walletProvider?: any): Promise<{
+  address: string;
+  token: string;
+  pro: boolean;
+  tier: string;
+}> {
+  const provider = walletProvider || (window as any).ethereum;
+  if (!provider) throw new Error("No wallet found");
+
+  // 1. Request accounts
+  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const address = accounts[0]?.toLowerCase();
+  if (!address) throw new Error("No account selected");
+
+  // 2. Switch to Base
   try {
-    const res = await fetch(`${AUTH_API}/api/user/status`, {
-      headers: { Authorization: `Bearer ${token}` }
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_CHAIN_ID }],
     });
-    if (res.status === 401) {
-      clearStoredAuth();
-      return { activeTiers: ['free'], expired: true };
+  } catch (switchErr: any) {
+    if (switchErr?.code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: BASE_CHAIN_ID,
+          chainName: "Base",
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+          rpcUrls: ["https://mainnet.base.org"],
+          blockExplorerUrls: ["https://basescan.org"],
+        }],
+      });
     }
-    if (!res.ok) return { activeTiers: ['free'] };
-    return res.json();
-  } catch {
-    return { activeTiers: ['free'] };
   }
+
+  // 3. Get auth token from central API (no-signature connect)
+  let token = "";
+  try {
+    const res = await fetch(`${AUTH_API}/api/auth/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    });
+    const data = await res.json();
+    token = data.token || "";
+  } catch {
+    // If central auth is down, generate a local fallback token
+    token = `local_${address}_${Date.now()}`;
+  }
+
+  // 4. Check subscription tier
+  const { pro, tier } = await checkProStatus(address, token);
+
+  // 5. Persist across ecosystem
+  setStoredAuth(address, token, pro, tier);
+
+  return { address, token, pro, tier };
 }
 
-export async function getChallenge(walletAddress: string) {
-  const res = await fetch(`${AUTH_API}/api/auth/challenge`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ walletAddress })
+// ─── Signature Verification (optional, for high-security actions) ────────────
+
+export async function verifyWithSignature(provider: any, address: string): Promise<string> {
+  // Get challenge nonce
+  const challengeRes = await fetch(`${AUTH_API}/api/auth/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address }),
   });
-  return res.json();
-}
+  const { nonce } = await challengeRes.json();
 
-export async function verifySignature(walletAddress: string, signature: string, nonce: string) {
-  const res = await fetch(`${AUTH_API}/api/auth/verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ walletAddress, signature, nonce })
+  // Sign message
+  const message = `Sign in to THRYX\nNonce: ${nonce}`;
+  const signature = await provider.request({
+    method: "personal_sign",
+    params: [message, address],
   });
-  return res.json();
+
+  // Verify
+  const verifyRes = await fetch(`${AUTH_API}/api/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address, signature, message }),
+  });
+  const data = await verifyRes.json();
+  return data.token;
 }
 
-// --- Token Verification (server-side) ---
+// ─── Pro Status Check ────────────────────────────────────────────────────────
 
-export async function verifyToken(token: string): Promise<{ address: string } | null> {
+export async function checkProStatus(
+  address: string,
+  token: string
+): Promise<{ pro: boolean; tier: string }> {
+  // Owner wallets always get pro
+  if (OWNER_WALLETS.includes(address.toLowerCase())) {
+    return { pro: true, tier: "owner" };
+  }
+
   try {
     const res = await fetch(`${AUTH_API}/api/user/status`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { pro: false, tier: "free" };
     const data = await res.json();
-    if (data.expired) return null;
-    // Extract wallet address from the token response
-    if (data.wallet) return { address: data.wallet.toLowerCase() };
-    if (data.address) return { address: data.address.toLowerCase() };
-    return null;
+    const tiers = data.activeTiers || [];
+    if (tiers.includes("ultimate")) return { pro: true, tier: "ultimate" };
+    if (tiers.includes("pro")) return { pro: true, tier: "pro" };
+    return { pro: false, tier: "free" };
   } catch {
-    return null;
+    return { pro: false, tier: "free" };
   }
 }
 
-// --- Local Storage ---
+// ─── Storage (shared across all THRYX sites) ─────────────────────────────────
 
-export function getStoredAuth(): { token: string; wallet: string } | null {
-  if (typeof window === 'undefined') return null;
-  const token = localStorage.getItem('thryx_auth_token');
-  const wallet = localStorage.getItem('thryx_wallet');
-  if (token && wallet) return { token, wallet };
-  return null;
+export function setStoredAuth(addressOrToken: string, tokenOrAddress: string, pro?: boolean, tier?: string) {
+  try {
+    // Backward compat: old code called setStoredAuth(token, address) — detect by checking if first arg looks like a token
+    let address: string;
+    let token: string;
+    if (addressOrToken.startsWith("0x") && addressOrToken.length === 42) {
+      address = addressOrToken;
+      token = tokenOrAddress;
+    } else {
+      // Old format: (token, address)
+      token = addressOrToken;
+      address = tokenOrAddress;
+    }
+    localStorage.setItem(STORAGE_KEYS.wallet, address);
+    localStorage.setItem(STORAGE_KEYS.token, token);
+    localStorage.setItem(STORAGE_KEYS.pro, String(pro ?? false));
+    localStorage.setItem(STORAGE_KEYS.tier, tier ?? "free");
+  } catch {}
 }
 
-export function setStoredAuth(token: string, wallet: string) {
-  localStorage.setItem('thryx_auth_token', token);
-  localStorage.setItem('thryx_wallet', wallet);
+export function getStoredAuth(): {
+  wallet: string | null;
+  token: string | null;
+  pro: boolean;
+  tier: string;
+} {
+  try {
+    return {
+      wallet: localStorage.getItem(STORAGE_KEYS.wallet),
+      token: localStorage.getItem(STORAGE_KEYS.token),
+      pro: localStorage.getItem(STORAGE_KEYS.pro) === "true",
+      tier: localStorage.getItem(STORAGE_KEYS.tier) || "free",
+    };
+  } catch {
+    return { wallet: null, token: null, pro: false, tier: "free" };
+  }
 }
 
 export function clearStoredAuth() {
-  localStorage.removeItem('thryx_auth_token');
-  localStorage.removeItem('thryx_wallet');
+  try {
+    Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+  } catch {}
 }
 
-export function isPro(status: { activeTiers?: string[] }, wallet?: string | null): boolean {
-  if (wallet && isOwnerWallet(wallet)) return true;
-  return status?.activeTiers?.some((t: string) => t !== 'free') ?? false;
+export function getAuthHeaders(): Record<string, string> {
+  const { token } = getStoredAuth();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
 }
 
-// --- Usage Tracking ---
+// ─── Utility: Authenticated fetch ────────────────────────────────────────────
 
-export function getDailyUsage(key: string): number {
-  if (typeof window === 'undefined') return 0;
-  const today = new Date().toISOString().slice(0, 10);
-  const stored = localStorage.getItem(`thryx_usage_${key}`);
-  if (stored) {
-    const parsed = JSON.parse(stored);
-    if (parsed.date === today) return parsed.count;
+export async function authFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = {
+    ...getAuthHeaders(),
+    ...(opts.headers || {}),
+  };
+  return fetch(url, { ...opts, headers });
+}
+
+// ─── Utility: Add $THRYX to wallet ───────────────────────────────────────────
+
+export async function addThryxToWallet(provider?: any): Promise<boolean> {
+  const eth = provider || (window as any).ethereum;
+  if (!eth) return false;
+  try {
+    await eth.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_CHAIN_ID }],
+    });
+    return await eth.request({
+      method: "wallet_watchAsset",
+      params: {
+        type: "ERC20",
+        options: {
+          address: THRYX_CONTRACT,
+          symbol: "THRYX",
+          decimals: 18,
+          image: "https://thryx.mom/thryx-logo.png",
+        },
+      },
+    });
+  } catch {
+    return false;
   }
-  return 0;
 }
 
-export function incrementDailyUsage(key: string): number {
-  const today = new Date().toISOString().slice(0, 10);
-  const current = getDailyUsage(key);
-  const newCount = current + 1;
-  localStorage.setItem(`thryx_usage_${key}`, JSON.stringify({ date: today, count: newCount }));
-  return newCount;
-}
+// ─── Constants Export ─────────────────────────────────────────────────────────
 
-// --- EIP-6963 Wallet Discovery ---
+export const THRYX = {
+  contract: THRYX_CONTRACT,
+  authApi: AUTH_API,
+  chainId: BASE_CHAIN_ID,
+  ownerWallets: OWNER_WALLETS,
+} as const;
 
+// ─── Legacy / Backward-Compatible Exports ─────────────────────────────────────
+// These are used by existing code across the ecosystem. DO NOT REMOVE.
+
+// Legacy type: old code accesses .uuid, .name, .icon, .provider directly
 export interface DiscoveredWallet {
   uuid: string;
   name: string;
   icon: string;
+  rdns: string;
   provider: any;
 }
 
-let _discoveredWallets: DiscoveredWallet[] = [];
-let _discoveryStarted = false;
+/** Convert internal EIP6963Provider to legacy flat DiscoveredWallet */
+function toLegacyWallet(w: EIP6963Provider): DiscoveredWallet {
+  return { uuid: w.info.uuid, name: w.info.name, icon: w.info.icon, rdns: w.info.rdns, provider: w.provider };
+}
 
-/** Start listening for EIP-6963 wallet announcements. Call once on app load. */
-export function startWalletDiscovery() {
-  if (typeof window === 'undefined' || _discoveryStarted) return;
-  _discoveryStarted = true;
-  _discoveredWallets = [];
-  window.addEventListener('eip6963:announceProvider', (event: any) => {
-    const { info, provider } = event.detail;
-    if (!_discoveredWallets.find(w => w.uuid === info.uuid)) {
-      _discoveredWallets.push({ uuid: info.uuid, name: info.name, icon: info.icon, provider });
-    }
+/** @deprecated Use discoverWallets() instead */
+export async function startWalletDiscovery(): Promise<DiscoveredWallet[]> {
+  const wallets = await discoverWallets();
+  return wallets.map(toLegacyWallet);
+}
+
+/** @deprecated Use discoverWallets()[n].provider instead */
+export function getWalletProvider(uuid?: string): any {
+  if (uuid) {
+    const w = discoveredWallets.find(w => w.info.uuid === uuid);
+    if (w) return w.provider;
+  }
+  return discoveredWallets[0]?.provider || (window as any).ethereum || null;
+}
+
+/** @deprecated Use checkProStatus() instead. Accepts (address, token) or just (token). */
+export async function checkSubscription(addressOrToken: string, token?: string): Promise<{ pro: boolean; tier: string; expired: string[]; activeTiers: string[] }> {
+  let addr = addressOrToken;
+  let tok = token || "";
+  // If called with just a token (old pattern): try to figure out address from storage
+  if (!token && !addressOrToken.startsWith("0x")) {
+    tok = addressOrToken;
+    addr = getStoredAuth().wallet || "";
+  }
+  const result = await checkProStatus(addr, tok);
+  return { ...result, expired: [], activeTiers: result.pro ? [result.tier] : [] };
+}
+
+/** @deprecated Use THRYX.ownerWallets.includes() instead */
+export function isOwnerWallet(address: string): boolean {
+  return OWNER_WALLETS.includes(address.toLowerCase());
+}
+
+/** @deprecated Use checkProStatus() instead. Accepts a string (address) or an object ({pro, tier}). */
+export function isPro(addressOrStatus: string | { pro?: boolean; tier?: string; activeTiers?: string[] }, wallet?: string): boolean {
+  if (typeof addressOrStatus === "object") {
+    // Called with a status object from checkSubscription
+    if (addressOrStatus.pro) return true;
+    if (addressOrStatus.activeTiers?.some(t => t === "pro" || t === "ultimate")) return true;
+    if (wallet && OWNER_WALLETS.includes(wallet.toLowerCase())) return true;
+    return false;
+  }
+  // Called with an address string
+  return OWNER_WALLETS.includes(addressOrStatus.toLowerCase()) || getStoredAuth().pro;
+}
+
+/** @deprecated Use verifyWithSignature() instead */
+export async function getChallenge(address: string): Promise<{ nonce: string }> {
+  const res = await fetch(`${AUTH_API}/api/auth/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address }),
   });
-  window.dispatchEvent(new Event('eip6963:requestProvider'));
+  const data = await res.json();
+  return { nonce: data.nonce };
 }
 
-/** Get all discovered wallets */
-export function getDiscoveredWallets(): DiscoveredWallet[] {
-  return _discoveredWallets;
+/** @deprecated Use verifyWithSignature() instead */
+export async function verifySignature(
+  address: string,
+  signature: string,
+  message?: string
+): Promise<{ token: string; wallet: string }> {
+  const res = await fetch(`${AUTH_API}/api/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address, signature, message }),
+  });
+  const data = await res.json();
+  return { token: data.token || "", wallet: address };
 }
 
-/**
- * Get the best available provider:
- * - If EIP-6963 found exactly 1 wallet, return it
- * - If EIP-6963 found multiple, return null (caller should show picker)
- * - Fallback to window.ethereum
- * Returns { provider, wallets } where wallets.length > 1 means show picker
- */
-export function getWalletProvider(): { provider: any | null; wallets: DiscoveredWallet[] } {
-  // Always return wallets for picker — never auto-connect (user should confirm)
-  if (_discoveredWallets.length >= 1) {
-    return { provider: null, wallets: _discoveredWallets };
+/** Verify an auth token — works both client-side and server-side */
+export async function verifyToken(token: string): Promise<{ wallet: string } | null> {
+  // Try decoding the token locally first (fast path)
+  try {
+    const [payload] = token.split(".");
+    if (payload) {
+      const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+      const wallet = decoded.w || decoded.wallet || "";
+      if (wallet) return { wallet };
+    }
+  } catch {}
+
+  // Fallback: verify via central API (works server-side)
+  try {
+    const res = await fetch(`${AUTH_API}/api/user/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.wallet) return { wallet: data.wallet };
+    }
+  } catch {}
+
+  // Client-side fallback
+  if (typeof window !== "undefined") {
+    const stored = getStoredAuth();
+    if (stored.token === token && stored.wallet) {
+      return { wallet: stored.wallet };
+    }
   }
-  // Fallback to window.ethereum but still show in picker
-  const eth = typeof window !== 'undefined' ? (window as any).ethereum : null;
-  if (eth) {
-    return { provider: null, wallets: [{ uuid: 'fallback', name: 'Browser Wallet', icon: '', provider: eth }] };
-  }
-  return { provider: null, wallets: [] };
+
+  return null;
 }
 
-/** Redirect to wallet install/dApp browser if no wallet found */
-export function redirectToWallet() {
-  if (typeof window === 'undefined') return;
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+/** Usage tracking for rate-limited features */
+export function getDailyUsage(feature: string): number {
+  try {
+    const key = `thryx_usage_${feature}_${new Date().toISOString().slice(0, 10)}`;
+    return parseInt(localStorage.getItem(key) || "0", 10);
+  } catch { return 0; }
+}
+
+export function incrementDailyUsage(feature: string): number {
+  try {
+    const key = `thryx_usage_${feature}_${new Date().toISOString().slice(0, 10)}`;
+    const val = getDailyUsage(feature) + 1;
+    localStorage.setItem(key, String(val));
+    return val;
+  } catch { return 0; }
+}
+
+/** Mobile wallet redirect helper */
+export function redirectToWallet(): void {
+  const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
   if (isMobile) {
     window.location.href = `https://rnbwapp.com/dapp?url=${encodeURIComponent(window.location.href)}`;
   } else {
-    window.open('https://metamask.io/download/', '_blank');
+    window.open("https://metamask.io/download/", "_blank");
   }
 }

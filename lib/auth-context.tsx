@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Restore from localStorage
   useEffect(() => {
     const saved = getStoredAuth();
-    if (saved) {
+    if (saved && saved.token && saved.wallet) {
       setAddress(saved.wallet);
       setToken(saved.token);
       checkStatus(saved.token, saved.wallet);

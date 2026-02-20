@@ -11,9 +11,9 @@ export async function POST(req: NextRequest) {
   // Try to verify token, but also accept wallet-based auth
   const session = await verifyToken(authHeader.slice(7));
   let address: string;
-  
+
   if (session) {
-    address = session.address;
+    address = session.wallet;
   } else {
     // Fallback: trust the wallet address from the request body
     const body = await req.clone().json();

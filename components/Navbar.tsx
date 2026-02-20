@@ -20,7 +20,7 @@ export default function Navbar() {
   }, []);
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 nav-glass transition-all duration-300 ${scrolled ? "shadow-lg shadow-black/20" : ""}`}>
+    <nav className={`fixed top-8 left-0 right-0 z-50 nav-glass transition-all duration-300 ${scrolled ? "shadow-lg shadow-black/20" : ""}`}>
       <div className="max-w-6xl mx-auto flex items-center justify-between px-4 md:px-6 h-16">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 group">
@@ -101,7 +101,7 @@ export default function Navbar() {
 
       {/* Mobile dropdown */}
       {menuOpen && (
-        <div className="md:hidden bg-[#030308]/95 backdrop-blur-xl border-t border-white/5 px-4 py-4 space-y-1">
+        <div className="md:hidden absolute top-16 left-0 right-0 bg-[#030308]/95 backdrop-blur-xl border-t border-white/5 px-4 py-4 space-y-1 z-40">
           <Link href="/" onClick={() => setMenuOpen(false)} className="block px-3 py-2.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/5 transition-all">
             Home
           </Link>

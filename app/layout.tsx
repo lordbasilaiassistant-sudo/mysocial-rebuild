@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { Inter, VT323 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import EcosystemBar from "@/components/EcosystemBar";
 import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import EcosystemFooter from "@/components/EcosystemFooter";
 
 const inter = Inter({ subsets: ["latin"] });
 const vt323 = VT323({ weight: "400", subsets: ["latin"], variable: "--font-pixel" });
@@ -34,11 +35,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} ${vt323.variable} bg-[#030308] text-gray-200 min-h-screen antialiased`}>
+      <body className={`${inter.className} ${vt323.variable} bg-[#030308] text-gray-200 min-h-screen antialiased has-ecosystem-bar`}>
         <AuthProvider>
+          <EcosystemBar currentSite="social" />
           <Navbar />
-          <main className="pt-16 min-h-screen">{children}</main>
-          <Footer />
+          <main className="pt-24 min-h-screen">{children}</main>
+          <EcosystemFooter />
         </AuthProvider>
       </body>
     </html>

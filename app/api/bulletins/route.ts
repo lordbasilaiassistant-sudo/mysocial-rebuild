@@ -16,9 +16,9 @@ export async function POST(req: NextRequest) {
 
   const session = await verifyToken(authHeader.slice(7));
   let address: string;
-  
+
   if (session) {
-    address = session.address;
+    address = session.wallet;
   } else {
     const body = await req.clone().json();
     if (!body.wallet_address) {
