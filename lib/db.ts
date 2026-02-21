@@ -10,6 +10,8 @@ export interface Profile {
   audio_url: string;
   theme_color: string;
   avatar_url: string;
+  banner_url: string;
+  bg_image_url: string;
   created_at: string;
   updated_at: string;
   visitor_count: number;
@@ -25,8 +27,8 @@ export async function getProfile(address: string): Promise<Profile | null> {
 export async function upsertProfile(address: string, data: Partial<Profile>): Promise<Profile> {
   const addr = address.toLowerCase();
   const { rows } = await sql`
-    INSERT INTO profiles (wallet_address, display_name, bio, interests, listening_to, audio_url, theme_color, avatar_url)
-    VALUES (${addr}, ${data.display_name || ''}, ${data.bio || ''}, ${data.interests || ''}, ${data.listening_to || ''}, ${data.audio_url || ''}, ${data.theme_color || '#003375'}, ${data.avatar_url || ''})
+    INSERT INTO profiles (wallet_address, display_name, bio, interests, listening_to, audio_url, theme_color, avatar_url, banner_url, bg_image_url)
+    VALUES (${addr}, ${data.display_name || ''}, ${data.bio || ''}, ${data.interests || ''}, ${data.listening_to || ''}, ${data.audio_url || ''}, ${data.theme_color || '#003375'}, ${data.avatar_url || ''}, ${data.banner_url || ''}, ${data.bg_image_url || ''})
     ON CONFLICT (wallet_address) DO UPDATE SET
       display_name = COALESCE(NULLIF(${data.display_name || ''}, ''), profiles.display_name),
       bio = ${data.bio ?? ''},
@@ -35,6 +37,8 @@ export async function upsertProfile(address: string, data: Partial<Profile>): Pr
       audio_url = ${data.audio_url ?? ''},
       theme_color = COALESCE(NULLIF(${data.theme_color || ''}, ''), profiles.theme_color),
       avatar_url = COALESCE(NULLIF(${data.avatar_url || ''}, ''), profiles.avatar_url),
+      banner_url = COALESCE(NULLIF(${data.banner_url || ''}, ''), profiles.banner_url),
+      bg_image_url = COALESCE(NULLIF(${data.bg_image_url || ''}, ''), profiles.bg_image_url),
       updated_at = NOW()
     RETURNING *
   `;

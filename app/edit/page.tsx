@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { DEFAULT_AVATAR, THRYX_API } from "@/lib/constants";
@@ -24,9 +24,32 @@ export default function EditProfilePage() {
   const [audioUrl, setAudioUrl] = useState("");
   const [themeColor, setThemeColor] = useState("#003375");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
+  const [bgImageUrl, setBgImageUrl] = useState("");
   const [friends, setFriends] = useState<string[]>(Array(8).fill(""));
+
+  // Upload states
   const [uploading, setUploading] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [uploadingBg, setUploadingBg] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
+
+  // Local preview URLs (instant, no network delay)
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [bannerPreview, setBannerPreview] = useState("");
+  const [bgPreview, setBgPreview] = useState("");
+
+  // Refs for latest state values (avoids stale closures in upload handlers)
+  const formRef = useRef({
+    displayName, bio, interests, listeningTo, audioUrl, themeColor,
+    avatarUrl, bannerUrl, bgImageUrl, friends,
+  });
+  useEffect(() => {
+    formRef.current = {
+      displayName, bio, interests, listeningTo, audioUrl, themeColor,
+      avatarUrl, bannerUrl, bgImageUrl, friends,
+    };
+  });
 
   // Load existing profile
   useEffect(() => {
@@ -43,6 +66,8 @@ export default function EditProfilePage() {
           setAudioUrl(p.audio_url || "");
           setThemeColor(p.theme_color || "#003375");
           setAvatarUrl(p.avatar_url || "");
+          setBannerUrl(p.banner_url || "");
+          setBgImageUrl(p.bg_image_url || "");
         }
         if (data?.friends) {
           const arr = Array(8).fill("");
@@ -58,9 +83,10 @@ export default function EditProfilePage() {
       .finally(() => setLoading(false));
   }, [address]);
 
-  // Save profile helper — used by Save button and auto-save after uploads
+  // Save profile helper — reads latest state from ref to avoid stale closures
   const saveProfile = async (overrides: Record<string, any> = {}) => {
     if (!address) return;
+    const f = formRef.current;
     try {
       const hdrs: Record<string, string> = { "Content-Type": "application/json" };
       if (token) hdrs["Authorization"] = `Bearer ${token}`;
@@ -69,14 +95,16 @@ export default function EditProfilePage() {
         headers: hdrs,
         body: JSON.stringify({
           wallet_address: address,
-          display_name: displayName,
-          bio,
-          interests,
-          listening_to: listeningTo,
-          audio_url: audioUrl,
-          theme_color: themeColor,
-          avatar_url: avatarUrl,
-          friends: friends
+          display_name: f.displayName,
+          bio: f.bio,
+          interests: f.interests,
+          listening_to: f.listeningTo,
+          audio_url: f.audioUrl,
+          theme_color: f.themeColor,
+          avatar_url: f.avatarUrl,
+          banner_url: f.bannerUrl,
+          bg_image_url: f.bgImageUrl,
+          friends: f.friends
             .map((addr, i) => ({ address: addr.trim(), position: i + 1 }))
             .filter(f => f.address),
           ...overrides,
@@ -84,6 +112,53 @@ export default function EditProfilePage() {
       });
     } catch (e) {
       console.error("Save error:", e);
+    }
+  };
+
+  // Generic image upload helper
+  const uploadImage = async (
+    file: File,
+    type: string,
+    setUrl: (url: string) => void,
+    setPreview: (url: string) => void,
+    setLoading: (v: boolean) => void,
+    dbField: string,
+  ) => {
+    if (!address) { alert("Connect your wallet first"); return; }
+    if (file.size > 10 * 1024 * 1024) { alert("Max 10MB"); return; }
+
+    // Immediate local preview
+    const localUrl = URL.createObjectURL(file);
+    setPreview(localUrl);
+    setLoading(true);
+
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const hdrs: Record<string, string> = {};
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${THRYX_API}/api/upload?address=${address}&type=${type}`, {
+        method: "POST",
+        headers: hdrs,
+        body: form,
+      });
+      const data = await res.json();
+      if (data.url) {
+        const freshUrl = data.url + "?t=" + Date.now();
+        setUrl(freshUrl);
+        // Auto-save to DB
+        await saveProfile({ [dbField]: freshUrl });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } else {
+        alert(data.error || "Upload failed");
+        setPreview(""); // clear local preview on failure
+      }
+    } catch (err: any) {
+      alert("Upload failed: " + (err?.message || "unknown error"));
+      setPreview("");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -116,6 +191,11 @@ export default function EditProfilePage() {
       </div>
     );
   }
+
+  // Resolved display URLs (local preview takes priority over remote URL)
+  const showAvatar = avatarPreview || avatarUrl || DEFAULT_AVATAR;
+  const showBanner = bannerPreview || bannerUrl;
+  const showBg = bgPreview || bgImageUrl;
 
   return (
     <div>
@@ -170,7 +250,7 @@ export default function EditProfilePage() {
                 </label>
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <img
-                    src={avatarUrl || DEFAULT_AVATAR}
+                    src={showAvatar}
                     alt="Preview"
                     className="ms-avatar-md"
                     onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
@@ -182,34 +262,9 @@ export default function EditProfilePage() {
                         type="file"
                         accept="image/*"
                         style={{ display: "none" }}
-                        onChange={async (e) => {
+                        onChange={e => {
                           const file = e.target.files?.[0];
-                          if (!file) return;
-                          if (!address) { alert("Connect your wallet first"); return; }
-                          setUploading(true);
-                          try {
-                            const form = new FormData();
-                            form.append("file", file);
-                            const hdrs: Record<string, string> = {};
-                            if (token) hdrs["Authorization"] = `Bearer ${token}`;
-                            const res = await fetch(`${THRYX_API}/api/upload?address=${address}`, {
-                              method: "POST",
-                              headers: hdrs,
-                              body: form,
-                            });
-                            const data = await res.json();
-                            if (data.url) {
-                              const freshUrl = data.url + "?t=" + Date.now();
-                              setAvatarUrl(freshUrl);
-                              // Auto-save to DB
-                              await saveProfile({ avatar_url: freshUrl });
-                              setSaved(true);
-                              setTimeout(() => setSaved(false), 3000);
-                            } else {
-                              alert(data.error || "Upload failed");
-                            }
-                          } catch (err: any) { alert("Upload failed: " + (err?.message || "unknown error")); }
-                          finally { setUploading(false); }
+                          if (file) uploadImage(file, "avatar", setAvatarUrl, setAvatarPreview, setUploading, "avatar_url");
                         }}
                       />
                     </label>
@@ -217,7 +272,7 @@ export default function EditProfilePage() {
                       className="ms-input"
                       type="url"
                       value={avatarUrl}
-                      onChange={e => setAvatarUrl(e.target.value)}
+                      onChange={e => { setAvatarUrl(e.target.value); setAvatarPreview(""); }}
                       placeholder="...or paste image URL"
                       style={{ fontSize: 12 }}
                     />
@@ -267,7 +322,6 @@ export default function EditProfilePage() {
                           const data = await res.json();
                           if (data.url) {
                             setAudioUrl(data.url);
-                            // Auto-save to DB
                             await saveProfile({ audio_url: data.url });
                             setSaved(true);
                             setTimeout(() => setSaved(false), 3000);
@@ -331,6 +385,7 @@ export default function EditProfilePage() {
 
           {activeTab === "Appearance" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Theme Color */}
               <div>
                 <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 4, color: "#333" }}>
                   Profile Theme Color
@@ -351,15 +406,101 @@ export default function EditProfilePage() {
                   />
                   <div
                     style={{
-                      flex: 1,
-                      height: 40,
-                      borderRadius: 8,
+                      flex: 1, height: 40, borderRadius: 8,
                       background: `linear-gradient(135deg, ${themeColor}, #003375)`,
                     }}
                   />
                 </div>
                 <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                  This color appears as your profile banner gradient.
+                  Fallback gradient when no banner image is set.
+                </div>
+              </div>
+
+              {/* Banner Image Upload */}
+              <div>
+                <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 4, color: "#333" }}>
+                  Banner Image
+                </label>
+                <div style={{
+                  width: "100%", height: 100, borderRadius: 8, overflow: "hidden",
+                  background: showBanner
+                    ? `url(${showBanner}) center/cover`
+                    : `linear-gradient(135deg, ${themeColor}, #003375)`,
+                  border: "1px solid #d4dbe4", marginBottom: 8,
+                }} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <label className="ms-btn ms-btn-ghost ms-btn-sm" style={{ cursor: "pointer", textAlign: "center" }}>
+                    {uploadingBanner ? "Uploading..." : "🖼️ Upload Banner"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadImage(file, "banner", setBannerUrl, setBannerPreview, setUploadingBanner, "banner_url");
+                      }}
+                    />
+                  </label>
+                  <input
+                    className="ms-input"
+                    type="url"
+                    value={bannerUrl}
+                    onChange={e => { setBannerUrl(e.target.value); setBannerPreview(""); }}
+                    placeholder="...or paste banner image URL"
+                    style={{ flex: 1, fontSize: 12 }}
+                  />
+                  {bannerUrl && (
+                    <button className="ms-btn-icon" onClick={() => { setBannerUrl(""); setBannerPreview(""); }} title="Remove">✕</button>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                  Recommended: 960×200px. Appears at the top of your profile.
+                </div>
+              </div>
+
+              {/* Background Image Upload */}
+              <div>
+                <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 4, color: "#333" }}>
+                  Profile Background Image
+                </label>
+                <div style={{
+                  width: "100%", height: 80, borderRadius: 8, overflow: "hidden",
+                  background: showBg
+                    ? `url(${showBg}) center/cover`
+                    : "#f0f4fa",
+                  border: "1px solid #d4dbe4", marginBottom: 8,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#888", fontSize: 12,
+                }}>
+                  {!showBg && "No background set"}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <label className="ms-btn ms-btn-ghost ms-btn-sm" style={{ cursor: "pointer", textAlign: "center" }}>
+                    {uploadingBg ? "Uploading..." : "🎨 Upload Background"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadImage(file, "background", setBgImageUrl, setBgPreview, setUploadingBg, "bg_image_url");
+                      }}
+                    />
+                  </label>
+                  <input
+                    className="ms-input"
+                    type="url"
+                    value={bgImageUrl}
+                    onChange={e => { setBgImageUrl(e.target.value); setBgPreview(""); }}
+                    placeholder="...or paste background image URL"
+                    style={{ flex: 1, fontSize: 12 }}
+                  />
+                  {bgImageUrl && (
+                    <button className="ms-btn-icon" onClick={() => { setBgImageUrl(""); setBgPreview(""); }} title="Remove">✕</button>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                  Tiled behind your entire profile page. Classic MySpace vibes.
                 </div>
               </div>
 
@@ -369,17 +510,18 @@ export default function EditProfilePage() {
                   Preview
                 </label>
                 <div style={{
-                  border: "1px solid #d4dbe4",
-                  borderRadius: 10,
-                  overflow: "hidden",
+                  border: "1px solid #d4dbe4", borderRadius: 10, overflow: "hidden",
+                  background: showBg ? `url(${showBg}) center/cover` : "#fff",
                 }}>
                   <div style={{
                     height: 60,
-                    background: `linear-gradient(135deg, ${themeColor}, #003375)`,
+                    background: showBanner
+                      ? `url(${showBanner}) center/cover`
+                      : `linear-gradient(135deg, ${themeColor}, #003375)`,
                   }} />
                   <div style={{ padding: 12, display: "flex", gap: 10, marginTop: -20 }}>
                     <img
-                      src={avatarUrl || DEFAULT_AVATAR}
+                      src={showAvatar}
                       alt="Preview"
                       style={{ width: 50, height: 50, borderRadius: "50%", border: "3px solid #fff", objectFit: "cover" }}
                       onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}

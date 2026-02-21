@@ -32,6 +32,8 @@ export async function POST(req: NextRequest) {
     audio_url: body.audio_url,
     theme_color: body.theme_color,
     avatar_url: body.avatar_url,
+    banner_url: body.banner_url,
+    bg_image_url: body.bg_image_url,
   });
 
   if (body.friends) {

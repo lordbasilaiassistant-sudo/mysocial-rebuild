@@ -55,12 +55,16 @@ export async function GET() {
       )
     `;
 
-    // Add audio_url column if missing
+    // Add missing columns to profiles
     try {
       await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS audio_url TEXT DEFAULT ''`;
-    } catch {
-      // Column may already exist
-    }
+    } catch { /* already exists */ }
+    try {
+      await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS banner_url TEXT DEFAULT ''`;
+    } catch { /* already exists */ }
+    try {
+      await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS bg_image_url TEXT DEFAULT ''`;
+    } catch { /* already exists */ }
 
     await sql`
       CREATE TABLE IF NOT EXISTS wall_comments (
