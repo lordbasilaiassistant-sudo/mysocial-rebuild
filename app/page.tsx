@@ -42,6 +42,7 @@ export default function HomePage() {
   const [thryxPrice, setThryxPrice] = useState("");
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [myAvatar, setMyAvatar] = useState("");
 
   useEffect(() => {
     fetch("/api/featured")
@@ -60,9 +61,21 @@ export default function HomePage() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.price) setThryxPrice(`$${parseFloat(data.price).toFixed(8)}`);
+        else setThryxPrice("—");
+      })
+      .catch(() => setThryxPrice("—"));
+  }, []);
+
+  // Load user's own avatar for compose box
+  useEffect(() => {
+    if (!address) return;
+    fetch(`/api/profile/${address}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.profile?.avatar_url) setMyAvatar(data.profile.avatar_url);
       })
       .catch(() => {});
-  }, []);
+  }, [address]);
 
   const handlePost = async () => {
     if (!postText.trim() || !address) return;
@@ -197,7 +210,12 @@ export default function HomePage() {
         <div className="ms-compose">
           <div className="ms-compose-inner">
             <Link href={`/profile/${address}`}>
-              <img className="ms-compose-avatar" src={DEFAULT_AVATAR} alt="" />
+              <img
+                className="ms-compose-avatar"
+                src={myAvatar || DEFAULT_AVATAR}
+                alt=""
+                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+              />
             </Link>
             <div className="ms-compose-fields">
               <textarea

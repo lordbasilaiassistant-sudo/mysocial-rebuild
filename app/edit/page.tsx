@@ -58,19 +58,15 @@ export default function EditProfilePage() {
       .finally(() => setLoading(false));
   }, [address]);
 
-  const handleSave = async () => {
+  // Save profile helper — used by Save button and auto-save after uploads
+  const saveProfile = async (overrides: Record<string, any> = {}) => {
     if (!address) return;
-    setSaving(true);
-    setSaved(false);
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
       await fetch("/api/profile", {
         method: "POST",
-        headers,
+        headers: hdrs,
         body: JSON.stringify({
           wallet_address: address,
           display_name: displayName,
@@ -83,15 +79,22 @@ export default function EditProfilePage() {
           friends: friends
             .map((addr, i) => ({ address: addr.trim(), position: i + 1 }))
             .filter(f => f.address),
+          ...overrides,
         }),
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       console.error("Save error:", e);
-    } finally {
-      setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    if (!address) return;
+    setSaving(true);
+    setSaved(false);
+    await saveProfile();
+    setSaved(true);
+    setSaving(false);
+    setTimeout(() => setSaved(false), 3000);
   };
 
   if (!address) {
@@ -187,16 +190,24 @@ export default function EditProfilePage() {
                           try {
                             const form = new FormData();
                             form.append("file", file);
-                            const headers: Record<string, string> = {};
-                            if (token) headers["Authorization"] = `Bearer ${token}`;
+                            const hdrs: Record<string, string> = {};
+                            if (token) hdrs["Authorization"] = `Bearer ${token}`;
                             const res = await fetch(`${THRYX_API}/api/upload?address=${address}`, {
                               method: "POST",
-                              headers,
+                              headers: hdrs,
                               body: form,
                             });
                             const data = await res.json();
-                            if (data.url) setAvatarUrl(data.url);
-                            else alert(data.error || "Upload failed");
+                            if (data.url) {
+                              const freshUrl = data.url + "?t=" + Date.now();
+                              setAvatarUrl(freshUrl);
+                              // Auto-save to DB
+                              await saveProfile({ avatar_url: freshUrl });
+                              setSaved(true);
+                              setTimeout(() => setSaved(false), 3000);
+                            } else {
+                              alert(data.error || "Upload failed");
+                            }
                           } catch (err: any) { alert("Upload failed: " + (err?.message || "unknown error")); }
                           finally { setUploading(false); }
                         }}
@@ -246,16 +257,23 @@ export default function EditProfilePage() {
                         try {
                           const form = new FormData();
                           form.append("file", file);
-                          const headers: Record<string, string> = {};
-                          if (token) headers["Authorization"] = `Bearer ${token}`;
+                          const hdrs: Record<string, string> = {};
+                          if (token) hdrs["Authorization"] = `Bearer ${token}`;
                           const res = await fetch(`${THRYX_API}/api/upload?address=${address}&type=audio`, {
                             method: "POST",
-                            headers,
+                            headers: hdrs,
                             body: form,
                           });
                           const data = await res.json();
-                          if (data.url) setAudioUrl(data.url);
-                          else alert(data.error || "Upload failed");
+                          if (data.url) {
+                            setAudioUrl(data.url);
+                            // Auto-save to DB
+                            await saveProfile({ audio_url: data.url });
+                            setSaved(true);
+                            setTimeout(() => setSaved(false), 3000);
+                          } else {
+                            alert(data.error || "Upload failed");
+                          }
                         } catch (err: any) { alert("Upload failed: " + (err?.message || "unknown error")); }
                         finally { setUploadingAudio(false); }
                       }}
