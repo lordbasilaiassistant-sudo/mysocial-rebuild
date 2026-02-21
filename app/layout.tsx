@@ -1,46 +1,26 @@
 import type { Metadata } from "next";
-import { Inter, VT323 } from "next/font/google";
-import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
-import EcosystemBar from "@/components/EcosystemBar";
-import Navbar from "@/components/Navbar";
-import EcosystemFooter from "@/components/EcosystemFooter";
-
-const inter = Inter({ subsets: ["latin"] });
-const vt323 = VT323({ weight: "400", subsets: ["latin"], variable: "--font-pixel" });
+import MySpaceHeader from "@/components/MySpaceHeader";
+import MySpaceFooter from "@/components/MySpaceFooter";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MySocial — The MySpace of Web3",
-  description: "Customizable profiles, Top 8 friends, bulletins & vibes — all on Base. Powered by THRYX.",
-  metadataBase: new URL("https://mysocial.mom"),
-  alternates: { canonical: "/" },
-  openGraph: {
-    title: "MySocial — The MySpace of Web3",
-    description: "Customizable profiles, Top 8 friends, bulletins & vibes — all on Base.",
-    url: "https://mysocial.mom",
-    siteName: "MySocial by THRYX",
-    images: [{ url: "/thryx-logo.png", width: 512, height: 512 }],
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "MySocial — The MySpace of Web3",
-    description: "Customizable profiles, Top 8 friends, bulletins & vibes — all on Base.",
-    images: ["/thryx-logo.png"],
-    site: "@THRYXAGI",
-    creator: "@THRYXAGI",
-  },
+  title: "MySocial — a place for friends",
+  description: "The social network rebuilt on Base. Customize your profile, find your Top 8, post bulletins, blog, and optionally tokenize your content.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} ${vt323.variable} bg-[#030308] text-gray-200 min-h-screen antialiased has-ecosystem-bar`}>
+    <html lang="en">
+      <body>
         <AuthProvider>
-          <EcosystemBar currentSite="social" />
-          <Navbar />
-          <main className="pt-24 min-h-screen">{children}</main>
-          <EcosystemFooter />
+          <div className="ms-shell">
+            <MySpaceHeader />
+            <main className="ms-content">
+              {children}
+            </main>
+            <MySpaceFooter />
+          </div>
         </AuthProvider>
       </body>
     </html>

@@ -2,299 +2,281 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
+import { DEFAULT_AVATAR, MOODS } from "@/lib/constants";
 
-interface ProfileSubscription {
-  pro: boolean;
-  activeTiers: string[];
+interface Profile {
+  wallet_address: string;
+  display_name: string;
+  bio: string;
+  interests: string;
+  listening_to: string;
+  theme_color: string;
+  avatar_url: string;
+  visitor_count: number;
+  created_at: string;
 }
 
-function shortAddr(addr: string) {
-  return addr.slice(0, 6) + "…" + addr.slice(-4);
+interface Friend {
+  friend_address: string;
+  position: number;
+  display_name?: string;
+  avatar_url?: string;
+}
+
+function timeAgo(date: string): string {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 export default function ProfilePage() {
-  const params = useParams();
-  const profileAddr = (params.address as string).toLowerCase();
-  const { address } = useAuth();
-  const [profile, setProfile] = useState<any>(null);
-  const [friends, setFriends] = useState<any[]>([]);
+  const { address: rawAddress } = useParams<{ address: string }>();
+  const address = (rawAddress || "").toLowerCase();
+  const { address: myAddress } = useAuth();
+  const isOwner = myAddress?.toLowerCase() === address;
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
-  const [profileSub, setProfileSub] = useState<ProfileSubscription | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`/api/profile/${profileAddr}?viewer=${address || ""}`);
-        const data = await res.json();
-        setProfile(data.profile);
-        setFriends(data.friends || []);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [profileAddr, address]);
-
-  // Check if the profile user has a Pro subscription
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`https://thryx.mom/api/subscribe?wallet=${profileAddr}`);
-        const data = await res.json();
-        setProfileSub({ pro: data.pro || false, activeTiers: data.activeTiers || ['free'] });
-      } catch {
-        setProfileSub({ pro: false, activeTiers: ['free'] });
-      }
-    })();
-  }, [profileAddr]);
+    if (!address) return;
+    const viewer = myAddress || "";
+    fetch(`/api/profile/${address}?viewer=${viewer}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setProfile(data.profile);
+          setFriends(data.friends || []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [address, myAddress]);
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
-        <div className="skeleton h-[200px] rounded-2xl mb-6" />
-        <div className="flex gap-4 mb-6">
-          <div className="skeleton w-24 h-24 rounded-full" />
-          <div className="flex-1 space-y-3">
-            <div className="skeleton h-6 w-48" />
-            <div className="skeleton h-4 w-32" />
+      <div>
+        {/* Skeleton header */}
+        <div className="ms-profile-header">
+          <div className="ms-profile-banner" />
+          <div className="ms-profile-info">
+            <div className="ms-avatar ms-skeleton" />
+            <div className="ms-profile-details">
+              <div className="ms-skeleton" style={{ width: 200, height: 24, marginBottom: 8 }} />
+              <div className="ms-skeleton" style={{ width: 300, height: 14 }} />
+            </div>
           </div>
-        </div>
-        <div className="grid md:grid-cols-3 gap-4">
-          <div className="skeleton h-48" />
-          <div className="skeleton h-48 md:col-span-2" />
         </div>
       </div>
     );
   }
 
-  const color = profile?.theme_color || "#06b6d4";
-  const isOwner = address === profileAddr;
+  if (!profile) {
+    return (
+      <div className="ms-empty">
+        <div className="ms-empty-icon">👤</div>
+        <div className="ms-empty-title">Profile not found</div>
+        <div className="ms-empty-text">This user hasn&apos;t created a profile yet.</div>
+        <Link href="/discover" className="ms-btn" style={{ marginTop: 12, display: "inline-flex" }}>
+          Discover People
+        </Link>
+      </div>
+    );
+  }
 
-  // Equalizer bars for music player
-  const eqBars = Array.from({ length: 16 }, (_, i) => ({
-    delay: `${(i * 0.1).toFixed(1)}s`,
-    maxH: 6 + Math.floor(Math.random() * 18),
-  }));
+  const displayName = profile.display_name || `${address.slice(0, 8)}...`;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 pb-12">
-      {/* ═══════ BANNER ═══════ */}
-      <div
-        className="profile-banner rounded-2xl relative"
-        style={{ "--banner-color": color } as any}
-      >
-        {/* Subtle grid overlay */}
+    <div>
+      {/* Profile Header */}
+      <div className="ms-profile-header">
         <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: `linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)`,
-            backgroundSize: "40px 40px",
-          }}
+          className="ms-profile-banner"
+          style={profile.theme_color ? { background: `linear-gradient(135deg, ${profile.theme_color}, #003375)` } : undefined}
         />
+        <div className="ms-profile-info">
+          <img
+            className="ms-avatar"
+            src={profile.avatar_url || DEFAULT_AVATAR}
+            alt={displayName}
+            onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+          />
+          <div className="ms-profile-details">
+            <div className="ms-profile-name">
+              {displayName}
+            </div>
+            <div className="ms-profile-headline" style={{ color: "#888" }}>
+              {address.slice(0, 6)}...{address.slice(-4)}
+            </div>
+            <div className="ms-profile-stats">
+              <div className="ms-profile-stat">
+                <b>{friends.length}</b> <span>friends</span>
+              </div>
+              <div className="ms-profile-stat">
+                <b>{profile.visitor_count}</b> <span>views</span>
+              </div>
+              <div className="ms-profile-stat">
+                <span>Joined {new Date(profile.created_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+            {/* Action buttons */}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              {isOwner ? (
+                <Link href="/edit" className="ms-btn ms-btn-blue">
+                  Edit Profile
+                </Link>
+              ) : (
+                <>
+                  <button className="ms-btn">Add Friend</button>
+                  <button className="ms-btn ms-btn-ghost">Message</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* ═══════ PROFILE HEADER ═══════ */}
-      <div className="relative -mt-16 mb-8 px-4 md:px-6 flex flex-col sm:flex-row items-start sm:items-end gap-4">
-        {/* Avatar */}
-        <div
-          className="avatar-ring animate-pulse-glow flex-shrink-0"
-          style={{ "--accent": color, "--accent-alt": "#8b5cf6" } as any}
-        >
-          <div
-            className="avatar-ring-inner w-28 h-28 text-4xl font-bold"
-            style={{ color }}
-          >
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-            ) : (
-              (profile?.display_name?.[0] || profileAddr[2] || "?").toUpperCase()
-            )}
-          </div>
-        </div>
-
-        {/* Name + meta */}
-        <div className="flex-1 min-w-0 pb-1">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl md:text-4xl font-black text-white truncate">
-              {profile?.display_name || shortAddr(profileAddr)}
-            </h1>
-            {profileSub?.pro && (
-              <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 text-xs font-bold">
-                ⚡ Pro
-              </span>
-            )}
-            {profileSub?.activeTiers?.includes('ultimate') && (
-              <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-400 text-xs font-bold">
-                💎 Ultimate
-              </span>
-            )}
-          </div>
-          <p className="text-xs font-mono text-white/20 mt-1 truncate">{profileAddr}</p>
-        </div>
-
-        {/* Right side actions */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="visitor-badge">
-            <span className="text-white/30">visitor</span>
-            <span className="counter-num">#{profile?.visitor_count || 0}</span>
-          </div>
-          {isOwner && (
-            <Link href="/edit" className="btn-glass !py-2 !px-4 text-xs">
-              Edit Profile
-            </Link>
+      {/* Profile Content: 2-column */}
+      <div className="ms-profile-layout">
+        {/* Left sidebar */}
+        <div>
+          {/* About */}
+          {profile.bio && (
+            <div className="ms-card">
+              <div className="ms-card-header">About Me</div>
+              <div className="ms-card-body" style={{ whiteSpace: "pre-wrap" }}>
+                {profile.bio}
+              </div>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* ═══════ STATS ROW ═══════ */}
-      <div className="flex gap-3 mb-8 overflow-x-auto pb-2">
-        <div className="stat-pill flex-1 min-w-[80px]">
-          <span className="text-lg font-bold text-white">{profile?.visitor_count || 0}</span>
-          <span className="text-[10px] text-white/30 uppercase tracking-widest mt-0.5">Views</span>
-        </div>
-        <div className="stat-pill flex-1 min-w-[80px]">
-          <span className="text-lg font-bold text-white">{friends.length}</span>
-          <span className="text-[10px] text-white/30 uppercase tracking-widest mt-0.5">Friends</span>
-        </div>
-        <div className="stat-pill flex-1 min-w-[80px]">
-          <span className="text-lg font-bold text-white">
-            {profile?.created_at ? new Date(profile.created_at).toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : "—"}
-          </span>
-          <span className="text-[10px] text-white/30 uppercase tracking-widest mt-0.5">Joined</span>
-        </div>
-        <a
-          href={`https://basescan.org/address/${profileAddr}`}
-          target="_blank"
-          rel="noopener"
-          className="stat-pill flex-1 min-w-[80px] hover:bg-white/5 transition group cursor-pointer"
-        >
-          <span className="text-lg font-bold text-white group-hover:text-cyan-400 transition">↗</span>
-          <span className="text-[10px] text-white/30 uppercase tracking-widest mt-0.5">BaseScan</span>
-        </a>
-      </div>
-
-      {/* ═══════ LISTENING TO (prominent) ═══════ */}
-      {profile?.listening_to && (
-        <div className="music-player-bar p-5 mb-8 flex items-center gap-4">
-          <div className="flex items-end gap-[3px] h-6 flex-shrink-0">
-            {eqBars.slice(0, 5).map((bar, i) => (
-              <div
-                key={i}
-                className="eq-bar"
-                style={{
-                  animationDelay: bar.delay,
-                  animationDuration: `${0.6 + Math.random() * 0.8}s`,
-                  maxHeight: `${bar.maxH}px`,
-                }}
-              />
-            ))}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] text-white/30 uppercase tracking-widest mb-0.5">Now Playing</div>
-            <div className="text-white font-medium truncate">{profile.listening_to}</div>
-          </div>
-          <div className="flex items-end gap-[3px] h-6 flex-shrink-0 opacity-40">
-            {eqBars.slice(5, 10).map((bar, i) => (
-              <div
-                key={i}
-                className="eq-bar"
-                style={{
-                  animationDelay: bar.delay,
-                  animationDuration: `${0.6 + Math.random() * 0.8}s`,
-                  maxHeight: `${bar.maxH}px`,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ═══════ TWO-COLUMN LAYOUT ═══════ */}
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* LEFT COLUMN */}
-        <div className="space-y-6">
-          {/* About Me */}
-          <div className="glass-card-static p-5">
-            <h3 className="section-label mb-3" style={{ color }}>About Me</h3>
-            <p className="text-sm text-white/50 leading-relaxed whitespace-pre-wrap">
-              {profile?.bio || "This user hasn't written anything yet…"}
-            </p>
+          {/* Details */}
+          <div className="ms-card">
+            <div className="ms-card-header">Details</div>
+            <div className="ms-card-body">
+              <table className="ms-detail-table">
+                <tbody>
+                  {profile.interests && (
+                    <tr>
+                      <td className="ms-label">Interests</td>
+                      <td className="ms-value">{profile.interests}</td>
+                    </tr>
+                  )}
+                  {profile.listening_to && (
+                    <tr>
+                      <td className="ms-label">Listening</td>
+                      <td className="ms-value">{profile.listening_to}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td className="ms-label">Network</td>
+                    <td className="ms-value">Base (L2)</td>
+                  </tr>
+                  <tr>
+                    <td className="ms-label">Wallet</td>
+                    <td className="ms-value">
+                      <a
+                        href={`https://basescan.org/address/${address}`}
+                        target="_blank"
+                        rel="noopener"
+                        style={{ fontSize: 12 }}
+                      >
+                        {address.slice(0, 10)}...{address.slice(-8)}
+                      </a>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Interests */}
-          <div className="glass-card-static p-5">
-            <h3 className="section-label mb-3" style={{ color }}>Interests</h3>
-            {profile?.interests ? (
-              <div className="flex flex-wrap gap-1.5">
-                {profile.interests.split(",").map((interest: string, idx: number) => (
-                  <span
-                    key={idx}
-                    className="text-xs px-2.5 py-1 rounded-full bg-white/5 text-white/40 border border-white/5"
-                  >
-                    {interest.trim()}
-                  </span>
-                ))}
+          {/* Visitor Counter */}
+          <div style={{ textAlign: "center", padding: "8px 0" }}>
+            <div className="ms-counter">
+              👁 {String(profile.visitor_count).padStart(6, "0")}
+            </div>
+          </div>
+        </div>
+
+        {/* Right main content */}
+        <div>
+          {/* Music Player */}
+          {profile.listening_to && (
+            <div className="ms-player">
+              <div className="ms-player-info">
+                <div className="ms-player-title">🎵 Now Playing</div>
+                <div className="ms-player-artist">{profile.listening_to}</div>
               </div>
-            ) : (
-              <p className="text-xs text-white/20">No interests listed</p>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
 
-        {/* RIGHT COLUMN */}
-        <div className="md:col-span-2 space-y-6">
           {/* Top 8 Friends */}
-          <div className="glass-card-static p-5">
-            <h3 className="section-label mb-4" style={{ color }}>
-              {profile?.display_name ? `${profile.display_name}'s` : "My"} Top 8
-            </h3>
-            {friends.length > 0 ? (
-              <div className="top8-grid">
-                {friends.map((f: any) => (
-                  <Link
-                    key={f.friend_address}
-                    href={`/profile/${f.friend_address}`}
-                    className="text-center p-3 rounded-xl hover:bg-white/5 transition group"
-                  >
-                    <div className="avatar-ring mx-auto mb-2" style={{ "--accent": color, "--accent-alt": "#8b5cf6" } as any}>
-                      <div className="avatar-ring-inner w-14 h-14 text-sm font-bold" style={{ color }}>
-                        {(f.display_name?.[0] || f.friend_address[2] || "?").toUpperCase()}
-                      </div>
+          <div className="ms-card">
+            <div className="ms-card-header">
+              <span>{displayName}&apos;s Friends ({friends.length})</span>
+              {isOwner && <Link href="/edit">Edit</Link>}
+            </div>
+            <div className="ms-card-body">
+              {friends.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 12, color: "#888" }}>
+                  {isOwner ? (
+                    <>No friends yet. <Link href="/discover">Find people!</Link></>
+                  ) : (
+                    "No friends yet."
+                  )}
+                </div>
+              ) : (
+                <div className="ms-top8">
+                  {friends.slice(0, 8).map(f => (
+                    <div key={f.friend_address} className="ms-top8-cell">
+                      <Link href={`/profile/${f.friend_address}`}>
+                        <img
+                          src={DEFAULT_AVATAR}
+                          alt={f.display_name || ""}
+                          onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                        />
+                      </Link>
+                      <Link href={`/profile/${f.friend_address}`}>
+                        {f.display_name || `${f.friend_address.slice(0, 6)}...`}
+                      </Link>
                     </div>
-                    <div className="text-xs text-white/40 group-hover:text-white transition truncate">
-                      {f.display_name || shortAddr(f.friend_address)}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-white/20 text-center py-8">
-                No friends added yet
-                {isOwner && (
-                  <>
-                    <br />
-                    <Link href="/edit" className="text-sm hover:underline mt-2 inline-block" style={{ color }}>
-                      Add some →
-                    </Link>
-                  </>
-                )}
-              </p>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Wall */}
-          <div className="glass-card-static p-5">
-            <h3 className="section-label mb-4" style={{ color }}>Wall</h3>
-            <p className="text-sm text-white/20 text-center py-8">
-              Wall posts coming soon… check the{" "}
-              <Link href="/bulletins" className="hover:underline transition" style={{ color }}>
-                Bulletin Board
-              </Link>{" "}
-              for now
-            </p>
+          {/* Wall / Comments placeholder */}
+          <div className="ms-card">
+            <div className="ms-card-header">
+              <span>{displayName}&apos;s Wall</span>
+            </div>
+            <div className="ms-card-body">
+              {myAddress && !isOwner && (
+                <div style={{ marginBottom: 12 }}>
+                  <textarea
+                    className="ms-textarea"
+                    placeholder={`Leave ${displayName} a comment...`}
+                    rows={2}
+                    style={{ minHeight: 50 }}
+                  />
+                  <div style={{ marginTop: 6, textAlign: "right" }}>
+                    <button className="ms-btn ms-btn-sm">Post Comment</button>
+                  </div>
+                </div>
+              )}
+              <div style={{ textAlign: "center", padding: 16, color: "#888", fontSize: 13 }}>
+                No wall comments yet. Be the first!
+              </div>
+            </div>
           </div>
         </div>
       </div>

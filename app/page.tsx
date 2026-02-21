@@ -1,238 +1,356 @@
 "use client";
 
-import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DEFAULT_AVATAR } from "@/lib/constants";
 
-function shortAddr(addr: string) {
-  return addr.slice(0, 6) + "…" + addr.slice(-4);
+interface FeaturedProfile {
+  wallet_address: string;
+  display_name: string;
+  avatar_url: string;
+  visitor_count: number;
 }
 
-function timeAgo(ts: string) {
-  const diff = Date.now() - new Date(ts).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+interface Post {
+  id: number;
+  wallet_address: string;
+  display_name: string;
+  avatar_url?: string;
+  content: string;
+  subject?: string;
+  created_at: string;
+  type: "bulletin" | "blog";
 }
 
-export default function Home() {
-  const { address, connect, connecting } = useAuth();
-  const [featured, setFeatured] = useState<any[]>([]);
-  const [bulletins, setBulletins] = useState<any[]>([]);
+function timeAgo(date: string): string {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d`;
+  return new Date(date).toLocaleDateString();
+}
+
+export default function HomePage() {
+  const { address, pro, connect } = useAuth();
+  const [profiles, setProfiles] = useState<FeaturedProfile[]>([]);
+  const [feed, setFeed] = useState<Post[]>([]);
+  const [thryxPrice, setThryxPrice] = useState("");
+  const [postText, setPostText] = useState("");
+  const [posting, setPosting] = useState(false);
 
   useEffect(() => {
     fetch("/api/featured")
-      .then((r) => r.json())
-      .then((d) => {
-        setFeatured(d.profiles || []);
-        setBulletins(d.bulletins || []);
+      .then(r => r.ok ? r.json() : { profiles: [], bulletins: [] })
+      .then(data => {
+        setProfiles(data.profiles || []);
+        const bulletins = (data.bulletins || []).map((b: any) => ({
+          ...b,
+          type: "bulletin" as const,
+        }));
+        setFeed(bulletins);
+      })
+      .catch(() => {});
+
+    fetch("https://thryx.mom/api/price")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.price) setThryxPrice(`$${parseFloat(data.price).toFixed(8)}`);
       })
       .catch(() => {});
   }, []);
 
-  const stats = [
-    { label: "Profiles", value: featured.length || "—" },
-    { label: "Bulletins", value: bulletins.length || "—" },
-    { label: "Network", value: "Base" },
-  ];
+  const handlePost = async () => {
+    if (!postText.trim() || !address) return;
+    setPosting(true);
+    try {
+      const res = await fetch("/api/bulletins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet_address: address,
+          content: postText.trim(),
+        }),
+      });
+      if (res.ok) {
+        const bulletin = await res.json();
+        setFeed(prev => [{
+          ...bulletin,
+          display_name: address.slice(0, 8),
+          type: "bulletin" as const,
+        }, ...prev]);
+        setPostText("");
+      }
+    } catch (e) {
+      console.error("Post error:", e);
+    } finally {
+      setPosting(false);
+    }
+  };
 
-  return (
-    <div>
-      {/* ═══════ HERO ═══════ */}
-      <section className="hero-gradient relative min-h-[85vh] flex items-center justify-center">
-        <div className="particle-field" />
-        <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
-          <div className="animate-in">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-white/40 mb-8">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Live on Base
+  // ─── Not Connected: Welcome / Signup ───
+  if (!address) {
+    return (
+      <div>
+        {/* Hero */}
+        <div className="ms-card" style={{ textAlign: "center" }}>
+          <div className="ms-card-body" style={{ padding: "40px 24px" }}>
+            <div style={{ fontSize: 32, fontWeight: 800, color: "#003375", marginBottom: 4 }}>
+              My<span style={{ color: "#ff9933" }}>Social</span>
+            </div>
+            <div style={{ fontSize: 16, color: "#666", marginBottom: 20 }}>
+              a place for friends — powered by $THRYX on Base
+            </div>
+            <p style={{ maxWidth: 500, margin: "0 auto 16px", color: "#444", fontSize: 15, lineHeight: 1.6 }}>
+              Create your space. Share your thoughts. Find your people.
+              No email, no password — just connect your wallet.
+            </p>
+            <button className="ms-btn ms-btn-lg" onClick={connect}>
+              Connect Wallet to Join
+            </button>
+            {thryxPrice && (
+              <div style={{ marginTop: 12, fontSize: 13, color: "#888" }}>
+                $THRYX: <span style={{ color: "#006600", fontWeight: 600 }}>{thryxPrice}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Discover People */}
+        <div className="ms-card">
+          <div className="ms-card-header-orange">
+            People on MySocial
+          </div>
+          <div className="ms-card-body">
+            <div className="ms-discover-grid">
+              {profiles.length === 0 ? (
+                <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 20, color: "#888" }}>
+                  Be the first to join!
+                </div>
+              ) : (
+                profiles.slice(0, 8).map(p => (
+                  <Link key={p.wallet_address} href={`/profile/${p.wallet_address}`} style={{ textDecoration: "none" }}>
+                    <div className="ms-discover-card">
+                      <img
+                        src={p.avatar_url || DEFAULT_AVATAR}
+                        alt={p.display_name || "User"}
+                        onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                      />
+                      <span className="ms-name">
+                        {p.display_name || `${p.wallet_address.slice(0, 6)}...`}
+                      </span>
+                    </div>
+                  </Link>
+                ))
+              )}
             </div>
           </div>
+        </div>
 
-          <h1 className="animate-in delay-1 text-5xl sm:text-6xl md:text-8xl font-black tracking-tight leading-[0.95] mb-6">
-            <span className="glitter-text">MySocial</span>
-          </h1>
+        {/* Recent Activity */}
+        {feed.length > 0 && (
+          <div className="ms-card">
+            <div className="ms-card-header">Recent Activity</div>
+            <div className="ms-card-body" style={{ padding: 0 }}>
+              {feed.slice(0, 5).map(post => (
+                <div key={post.id} className="ms-post" style={{ border: "none", borderBottom: "1px solid #eef2f7", borderRadius: 0, margin: 0 }}>
+                  <div className="ms-post-header">
+                    <Link href={`/profile/${post.wallet_address}`}>
+                      <img
+                        className="ms-post-avatar"
+                        src={post.avatar_url || DEFAULT_AVATAR}
+                        alt=""
+                        onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                      />
+                    </Link>
+                    <div className="ms-post-meta">
+                      <Link href={`/profile/${post.wallet_address}`} className="ms-post-author">
+                        {post.display_name || `${post.wallet_address.slice(0, 8)}...`}
+                      </Link>
+                      <span className="ms-post-handle">
+                        {post.wallet_address.slice(0, 6)}...{post.wallet_address.slice(-4)}
+                      </span>
+                      <div className="ms-post-time">{timeAgo(post.created_at)}</div>
+                    </div>
+                  </div>
+                  <div className="ms-post-body">
+                    {post.content.slice(0, 280)}{post.content.length > 280 ? "..." : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-          <p className="animate-in delay-2 text-lg sm:text-xl md:text-2xl text-white/40 font-light max-w-2xl mx-auto mb-3">
-            The <span className="text-cyan-400 font-medium">MySpace</span> of Web3
-          </p>
+  // ─── Connected: Feed View ───
+  return (
+    <div className="ms-layout">
+      <div className="ms-main">
+        {/* Compose */}
+        <div className="ms-compose">
+          <div className="ms-compose-inner">
+            <Link href={`/profile/${address}`}>
+              <img className="ms-compose-avatar" src={DEFAULT_AVATAR} alt="" />
+            </Link>
+            <div className="ms-compose-fields">
+              <textarea
+                placeholder="What's on your mind?"
+                value={postText}
+                onChange={e => setPostText(e.target.value)}
+                rows={2}
+              />
+              <div className="ms-compose-actions">
+                <div className="ms-compose-tools">
+                  {/* Future: image, mood, tokenize */}
+                </div>
+                <button
+                  className="ms-btn"
+                  disabled={!postText.trim() || posting}
+                  onClick={handlePost}
+                >
+                  {posting ? "Posting..." : "Post"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
-          <p className="animate-in delay-2 text-sm text-white/20 max-w-lg mx-auto mb-10">
-            Customizable profiles · Top 8 friends · Bulletins · Vibes — all on-chain on Base
-          </p>
+        {/* Feed */}
+        {feed.length === 0 ? (
+          <div className="ms-empty">
+            <div className="ms-empty-icon">📝</div>
+            <div className="ms-empty-title">No posts yet</div>
+            <div className="ms-empty-text">Be the first to share something!</div>
+          </div>
+        ) : (
+          feed.map(post => (
+            <div key={post.id} className="ms-post">
+              <div className="ms-post-header">
+                <Link href={`/profile/${post.wallet_address}`}>
+                  <img
+                    className="ms-post-avatar"
+                    src={post.avatar_url || DEFAULT_AVATAR}
+                    alt=""
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                  />
+                </Link>
+                <div className="ms-post-meta">
+                  <Link href={`/profile/${post.wallet_address}`} className="ms-post-author">
+                    {post.display_name || `${post.wallet_address.slice(0, 8)}...`}
+                  </Link>
+                  <span className="ms-post-handle">
+                    {post.wallet_address.slice(0, 6)}...{post.wallet_address.slice(-4)}
+                  </span>
+                  <div className="ms-post-time">{timeAgo(post.created_at)}</div>
+                </div>
+              </div>
+              <div className="ms-post-body">
+                {post.content}
+              </div>
+              <div className="ms-post-actions">
+                <button className="ms-post-action">💬 Reply</button>
+                <button className="ms-post-action">🔄 Share</button>
+                <button className="ms-post-action">❤️ Like</button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
-          <div className="animate-in delay-3 flex flex-col sm:flex-row items-center justify-center gap-3">
-            {address ? (
-              <Link href={`/profile/${address}`} className="btn-gradient text-base">
-                <span>View My Profile →</span>
-              </Link>
-            ) : (
-              <button onClick={connect} disabled={connecting} className="btn-gradient text-base">
-                <span>{connecting ? "Connecting…" : "Connect Wallet"}</span>
-              </button>
-            )}
-            <Link href="/bulletins" className="btn-glass text-base">
-              Bulletin Board
+      {/* Sidebar */}
+      <div className="ms-sidebar">
+        {/* Quick Actions */}
+        <div className="ms-card">
+          <div className="ms-card-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Link href={`/profile/${address}`} className="ms-btn ms-btn-blue" style={{ textAlign: "center" }}>
+              My Profile
+            </Link>
+            <Link href="/edit" className="ms-btn ms-btn-ghost" style={{ textAlign: "center" }}>
+              Edit Profile
+            </Link>
+            <Link href="/discover" className="ms-btn ms-btn-ghost" style={{ textAlign: "center" }}>
+              Find People
             </Link>
           </div>
+        </div>
 
-          {/* Stats row */}
-          <div className="animate-in delay-4 flex justify-center gap-3 mt-14">
-            {stats.map((s) => (
-              <div key={s.label} className="stat-pill min-w-[100px]">
-                <span className="text-xl font-bold text-white">{s.value}</span>
-                <span className="text-[10px] text-white/30 uppercase tracking-widest mt-1">{s.label}</span>
-              </div>
-            ))}
+        {/* $THRYX Info */}
+        <div className="ms-card">
+          <div className="ms-card-header">$THRYX</div>
+          <div className="ms-card-body" style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#003375", marginBottom: 6 }}>
+              {thryxPrice || "Loading..."}
+            </div>
+            <a href="https://thryx.mom/swap" target="_blank" rel="noopener" className="ms-btn ms-btn-sm">
+              Trade $THRYX
+            </a>
           </div>
         </div>
 
-        {/* Bottom gradient fade */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#030308] to-transparent" />
-      </section>
-
-      {/* ═══════ FEATURES ═══════ */}
-      <section className="max-w-6xl mx-auto px-4 md:px-6 py-20">
-        <div className="text-center mb-12">
-          <span className="section-label">What You Get</span>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mt-3">Your Space, On-Chain</h2>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { icon: "👤", title: "Profiles", desc: "Customize your page — bio, theme, avatar, vibes. Make it yours." },
-            { icon: "👥", title: "Top 8", desc: "Show off your on-chain besties. The OG social flex." },
-            { icon: "📋", title: "Bulletins", desc: "Post updates to the public board. Speak your mind." },
-            { icon: "🎵", title: "Now Playing", desc: "Show what track you're vibing to. The culture lives here." },
-          ].map((f, i) => (
-            <div key={f.title} className={`glass-card p-6 animate-in delay-${i + 1}`}>
-              <div className="feature-icon mb-4">{f.icon}</div>
-              <h3 className="font-semibold text-white text-sm mb-2">{f.title}</h3>
-              <p className="text-xs text-white/30 leading-relaxed">{f.desc}</p>
+        {/* People You Might Know */}
+        {profiles.length > 0 && (
+          <div className="ms-card">
+            <div className="ms-card-header">
+              <span>People</span>
+              <Link href="/discover">See All</Link>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══════ FEATURED PROFILES ═══════ */}
-      {featured.length > 0 && (
-        <section className="max-w-6xl mx-auto px-4 md:px-6 pb-20">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <span className="section-label">Trending</span>
-              <h2 className="text-2xl md:text-3xl font-bold text-white mt-1">Featured Profiles</h2>
-            </div>
-            <span className="text-xs text-white/20">Most visited</span>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {featured.map((p: any) => {
-              const color = p.theme_color || "#06b6d4";
-              return (
+            <div className="ms-card-body" style={{ padding: 8 }}>
+              {profiles.slice(0, 4).map(p => (
                 <Link
                   key={p.wallet_address}
                   href={`/profile/${p.wallet_address}`}
-                  className="glass-card p-5 group block"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 6px",
+                    borderRadius: 8,
+                    textDecoration: "none",
+                    color: "inherit",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseOver={e => (e.currentTarget.style.background = "#f0f4fa")}
+                  onMouseOut={e => (e.currentTarget.style.background = "transparent")}
                 >
-                  <div className="flex items-center gap-4 mb-3">
-                    {/* Avatar with gradient ring */}
-                    <div className="avatar-ring" style={{ "--accent": color, "--accent-alt": "#8b5cf6" } as any}>
-                      <div className="avatar-ring-inner w-12 h-12 text-sm font-bold" style={{ color }}>
-                        {p.avatar_url ? (
-                          <img src={p.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
-                        ) : (
-                          (p.display_name?.[0] || p.wallet_address[2] || "?").toUpperCase()
-                        )}
-                      </div>
+                  <img
+                    src={p.avatar_url || DEFAULT_AVATAR}
+                    alt=""
+                    className="ms-avatar-sm"
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>
+                      {p.display_name || `${p.wallet_address.slice(0, 8)}...`}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-white truncate group-hover:text-cyan-400 transition-colors">
-                        {p.display_name || shortAddr(p.wallet_address)}
-                      </div>
-                      <div className="text-xs text-white/20 font-mono">{shortAddr(p.wallet_address)}</div>
-                    </div>
-                    <div className="visitor-badge">
-                      <span className="counter-num">{p.visitor_count || 0}</span>
-                      <span className="text-white/20">views</span>
+                    <div style={{ fontSize: 12, color: "#888" }}>
+                      {p.wallet_address.slice(0, 6)}...{p.wallet_address.slice(-4)}
                     </div>
                   </div>
-                  {p.listening_to && (
-                    <div className="flex items-center gap-2 text-xs text-white/30 bg-white/3 rounded-lg px-3 py-2">
-                      <span className="animate-rainbow">♫</span>
-                      <span className="truncate">{p.listening_to}</span>
-                    </div>
-                  )}
                 </Link>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* ═══════ RECENT BULLETINS ═══════ */}
-      {bulletins.length > 0 && (
-        <section className="max-w-6xl mx-auto px-4 md:px-6 pb-20">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <span className="section-label">Feed</span>
-              <h2 className="text-2xl md:text-3xl font-bold text-white mt-1">Recent Bulletins</h2>
+              ))}
             </div>
-            <Link href="/bulletins" className="text-xs text-cyan-400 hover:text-cyan-300 transition">
-              View all →
-            </Link>
           </div>
-          <div className="space-y-3">
-            {bulletins.map((b: any) => (
-              <div key={b.id} className="bulletin-card" style={{ "--accent-color": b.theme_color || "#06b6d4" } as any}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div
-                    className="avatar-ring flex-shrink-0"
-                    style={{ "--accent": b.theme_color || "#06b6d4", "--accent-alt": "#8b5cf6" } as any}
-                  >
-                    <div className="avatar-ring-inner w-8 h-8 text-xs font-bold" style={{ color: b.theme_color || "#06b6d4" }}>
-                      {(b.display_name?.[0] || b.wallet_address?.[2] || "?").toUpperCase()}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <Link
-                      href={`/profile/${b.wallet_address}`}
-                      className="text-sm font-medium hover:text-cyan-400 transition-colors"
-                      style={{ color: b.theme_color || "#06b6d4" }}
-                    >
-                      {b.display_name || shortAddr(b.wallet_address)}
-                    </Link>
-                    <span className="text-white/15 mx-2">·</span>
-                    <span className="text-xs text-white/20">{timeAgo(b.created_at)}</span>
-                  </div>
-                </div>
-                <p className="text-sm text-white/60 leading-relaxed pl-11">{b.content}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+        )}
 
-      {/* ═══════ CTA ═══════ */}
-      <section className="max-w-6xl mx-auto px-4 md:px-6 pb-20">
-        <div className="gradient-border p-8 md:p-12 text-center animate-pulse-glow">
-          <div className="text-3xl mb-4 animate-float">⚡</div>
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
-            Powered by <span className="text-cyan-400">$THRYX</span>
-          </h2>
-          <p className="text-sm text-white/30 mb-6 max-w-md mx-auto">
-            The token behind the THRYX ecosystem — DeFi, AI, social, all on Base.
-          </p>
-          <a
-            href="https://thryx.mom/swap"
-            target="_blank"
-            rel="noopener"
-            className="btn-gradient"
-          >
-            <span>Get $THRYX →</span>
-          </a>
+        {/* Ecosystem */}
+        <div className="ms-card">
+          <div className="ms-card-header">Ecosystem</div>
+          <div className="ms-card-body" style={{ fontSize: 13, lineHeight: 2 }}>
+            <a href="https://thryx.mom" target="_blank" rel="noopener">Hub</a>{" · "}
+            <a href="https://mint.thryx.mom" target="_blank" rel="noopener">MemeMint</a>{" · "}
+            <a href="https://scanner.thryx.mom" target="_blank" rel="noopener">Scanner</a>{" · "}
+            <a href="https://signals.thryx.mom" target="_blank" rel="noopener">Signals</a>{" · "}
+            <a href="https://portfolio.thryx.mom" target="_blank" rel="noopener">Portfolio</a>
+          </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 }

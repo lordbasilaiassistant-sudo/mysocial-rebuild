@@ -10,7 +10,7 @@ export async function GET() {
         bio TEXT DEFAULT '',
         interests TEXT DEFAULT '',
         listening_to TEXT DEFAULT '',
-        theme_color TEXT DEFAULT '#22d3ee',
+        theme_color TEXT DEFAULT '#003375',
         avatar_url TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
@@ -37,7 +37,35 @@ export async function GET() {
       )
     `;
 
-    return NextResponse.json({ ok: true, message: "Tables created" });
+    await sql`
+      CREATE TABLE IF NOT EXISTS blog_posts (
+        id SERIAL PRIMARY KEY,
+        wallet_address TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        is_tokenized BOOLEAN DEFAULT false,
+        token_name TEXT DEFAULT '',
+        token_symbol TEXT DEFAULT '',
+        token_address TEXT DEFAULT '',
+        token_deploy_job_id TEXT DEFAULT '',
+        token_deploy_status TEXT DEFAULT '',
+        view_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS wall_comments (
+        id SERIAL PRIMARY KEY,
+        profile_address TEXT NOT NULL,
+        commenter_address TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `;
+
+    return NextResponse.json({ ok: true, message: "All tables created/verified" });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

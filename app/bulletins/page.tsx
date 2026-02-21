@@ -1,173 +1,174 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
+import { DEFAULT_AVATAR } from "@/lib/constants";
 
-function shortAddr(addr: string) {
-  return addr.slice(0, 6) + "…" + addr.slice(-4);
+interface Bulletin {
+  id: number;
+  wallet_address: string;
+  display_name: string;
+  avatar_url?: string;
+  content: string;
+  created_at: string;
 }
 
-function timeAgo(ts: string) {
-  const diff = Date.now() - new Date(ts).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+function timeAgo(date: string): string {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d`;
+  return new Date(date).toLocaleDateString();
 }
 
 export default function BulletinsPage() {
-  const { address, token, connect } = useAuth();
-  const [bulletins, setBulletins] = useState<any[]>([]);
-  const [content, setContent] = useState("");
-  const [posting, setPosting] = useState(false);
+  const { address, token } = useAuth();
+  const [bulletins, setBulletins] = useState<Bulletin[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const fetchBulletins = () => {
-    fetch("/api/bulletins")
-      .then((r) => r.json())
-      .then(setBulletins)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  };
+  const [postText, setPostText] = useState("");
+  const [posting, setPosting] = useState(false);
 
   useEffect(() => {
-    fetchBulletins();
+    fetch("/api/bulletins")
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setBulletins(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const handlePost = async () => {
-    if (!token || !content.trim()) return;
+    if (!postText.trim() || !address) return;
     setPosting(true);
     try {
-      await fetch("/api/bulletins", {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch("/api/bulletins", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content: content.trim(), wallet_address: address }),
+        headers,
+        body: JSON.stringify({
+          wallet_address: address,
+          content: postText.trim(),
+        }),
       });
-      setContent("");
-      fetchBulletins();
+      if (res.ok) {
+        const bulletin = await res.json();
+        setBulletins(prev => [{
+          ...bulletin,
+          display_name: address.slice(0, 8),
+        }, ...prev]);
+        setPostText("");
+      }
     } catch (e) {
-      console.error(e);
+      console.error("Post error:", e);
     } finally {
       setPosting(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 md:px-6 pb-12">
-      {/* Header */}
-      <div className="mb-8">
-        <span className="section-label">Community</span>
-        <h1 className="text-3xl md:text-4xl font-black text-white mt-2">Bulletin Board</h1>
-        <p className="text-sm text-white/25 mt-2">
-          {bulletins.length} bulletin{bulletins.length !== 1 ? "s" : ""} posted
-        </p>
-      </div>
+    <div>
+      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#003375", marginBottom: 12 }}>
+        Bulletins
+      </h1>
 
-      {/* Post form */}
+      {/* Compose */}
       {address ? (
-        <div className="glass-card-static p-5 mb-8">
-          <div className="flex items-start gap-3">
-            <div
-              className="avatar-ring flex-shrink-0 mt-0.5"
-              style={{ "--accent": "#06b6d4", "--accent-alt": "#8b5cf6" } as any}
-            >
-              <div className="avatar-ring-inner w-10 h-10 text-xs font-bold text-cyan-400">
-                {address[2]?.toUpperCase() || "?"}
-              </div>
-            </div>
-            <div className="flex-1 min-w-0">
+        <div className="ms-compose">
+          <div className="ms-compose-inner">
+            <Link href={`/profile/${address}`}>
+              <img className="ms-compose-avatar" src={DEFAULT_AVATAR} alt="" />
+            </Link>
+            <div className="ms-compose-fields">
               <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value.slice(0, 500))}
-                placeholder="What's on your mind?"
+                placeholder="Post a bulletin..."
+                value={postText}
+                onChange={e => setPostText(e.target.value)}
                 rows={3}
-                className="w-full bg-transparent text-white placeholder-white/20 resize-none outline-none text-sm leading-relaxed"
+                maxLength={500}
               />
-              <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                <span className={`text-xs ${content.length > 450 ? "text-red-400" : "text-white/20"}`}>
-                  {content.length}/500
+              <div className="ms-compose-actions">
+                <span style={{ fontSize: 12, color: "#888" }}>
+                  {postText.length}/500
                 </span>
                 <button
+                  className="ms-btn"
+                  disabled={!postText.trim() || posting}
                   onClick={handlePost}
-                  disabled={!content.trim() || posting}
-                  className="btn-gradient text-sm !py-2 !px-6"
                 >
-                  <span>{posting ? "Posting…" : "Post"}</span>
+                  {posting ? "Posting..." : "Post Bulletin"}
                 </button>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="gradient-border p-8 text-center mb-8">
-          <p className="text-white/40 mb-4">Connect your wallet to post bulletins</p>
-          <button onClick={connect} className="btn-gradient">
-            <span>Connect Wallet</span>
-          </button>
+        <div className="ms-alert-info">
+          Connect your wallet to post bulletins.
         </div>
       )}
 
-      {/* Bulletin feed */}
+      {/* Feed */}
       {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="skeleton h-24" />
+        <div>
+          {[1, 2, 3].map(i => (
+            <div key={i} className="ms-post">
+              <div className="ms-post-header">
+                <div className="ms-skeleton" style={{ width: 40, height: 40, borderRadius: "50%" }} />
+                <div>
+                  <div className="ms-skeleton" style={{ width: 120, height: 14, marginBottom: 4 }} />
+                  <div className="ms-skeleton" style={{ width: 60, height: 12 }} />
+                </div>
+              </div>
+              <div className="ms-skeleton" style={{ width: "100%", height: 40 }} />
+            </div>
           ))}
         </div>
       ) : bulletins.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="text-4xl mb-4 opacity-20">📋</div>
-          <p className="text-white/30 text-sm">No bulletins yet. Be the first to post!</p>
+        <div className="ms-empty">
+          <div className="ms-empty-icon">📢</div>
+          <div className="ms-empty-title">No bulletins yet</div>
+          <div className="ms-empty-text">Be the first to post a bulletin!</div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {bulletins.map((b: any) => {
-            const accent = b.theme_color || "#06b6d4";
-            return (
-              <div
-                key={b.id}
-                className="bulletin-card"
-                style={{ "--accent-color": accent } as any}
-              >
-                <div className="flex items-start gap-3">
-                  <Link
-                    href={`/profile/${b.wallet_address}`}
-                    className="flex-shrink-0"
-                  >
-                    <div
-                      className="avatar-ring"
-                      style={{ "--accent": accent, "--accent-alt": "#8b5cf6" } as any}
-                    >
-                      <div
-                        className="avatar-ring-inner w-10 h-10 text-xs font-bold"
-                        style={{ color: accent }}
-                      >
-                        {(b.display_name?.[0] || b.wallet_address?.[2] || "?").toUpperCase()}
-                      </div>
-                    </div>
-                  </Link>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Link
-                        href={`/profile/${b.wallet_address}`}
-                        className="text-sm font-semibold hover:underline transition-colors truncate"
-                        style={{ color: accent }}
-                      >
-                        {b.display_name || shortAddr(b.wallet_address)}
-                      </Link>
-                      <span className="text-white/10">·</span>
-                      <span className="text-xs text-white/20 flex-shrink-0">{timeAgo(b.created_at)}</span>
-                    </div>
-                    <p className="text-sm text-white/60 leading-relaxed whitespace-pre-wrap">{b.content}</p>
-                  </div>
-                </div>
+        bulletins.map(b => (
+          <div key={b.id} className="ms-post">
+            <div className="ms-post-header">
+              <Link href={`/profile/${b.wallet_address}`}>
+                <img
+                  className="ms-post-avatar"
+                  src={b.avatar_url || DEFAULT_AVATAR}
+                  alt=""
+                  onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                />
+              </Link>
+              <div className="ms-post-meta">
+                <Link href={`/profile/${b.wallet_address}`} className="ms-post-author">
+                  {b.display_name || `${b.wallet_address.slice(0, 8)}...`}
+                </Link>
+                <span className="ms-post-handle">
+                  {b.wallet_address.slice(0, 6)}...{b.wallet_address.slice(-4)}
+                </span>
+                <div className="ms-post-time">{timeAgo(b.created_at)}</div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+            <div className="ms-post-body">
+              {b.content}
+            </div>
+            <div className="ms-post-actions">
+              <button className="ms-post-action">💬 Reply</button>
+              <button className="ms-post-action">🔄 Share</button>
+              <button className="ms-post-action">❤️ Like</button>
+            </div>
+          </div>
+        ))
       )}
     </div>
   );
