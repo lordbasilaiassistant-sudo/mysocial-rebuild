@@ -12,27 +12,25 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  let address: string | null = null;
 
-  const session = await verifyToken(authHeader.slice(7));
-  let address: string;
-  if (session) {
-    address = session.wallet;
-  } else {
-    const body = await req.clone().json();
-    if (!body.wallet_address) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    address = body.wallet_address;
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const session = await verifyToken(authHeader.slice(7));
+    if (session) address = session.wallet;
   }
 
   const body = await req.json();
+
+  if (!address) {
+    if (!body.wallet_address) return NextResponse.json({ error: "No address provided" }, { status: 401 });
+    address = body.wallet_address;
+  }
   if (!body.title?.trim() || !body.body?.trim()) {
     return NextResponse.json({ error: "Title and body required" }, { status: 400 });
   }
 
-  const post = await createBlogPost(address, {
+  const post = await createBlogPost(address!, {
     title: body.title.trim(),
     body: body.body.trim(),
     is_tokenized: body.is_tokenized || false,

@@ -9,31 +9,28 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  let address: string | null = null;
+
   const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const session = await verifyToken(authHeader.slice(7));
-  let address: string;
-
-  if (session) {
-    address = session.wallet;
-  } else {
-    const body = await req.clone().json();
-    if (!body.wallet_address) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-    address = body.wallet_address;
+  if (authHeader?.startsWith("Bearer ")) {
+    const session = await verifyToken(authHeader.slice(7));
+    if (session) address = session.wallet;
   }
 
   const body = await req.json();
+
+  if (!address) {
+    if (!body.wallet_address) {
+      return NextResponse.json({ error: "No address provided" }, { status: 401 });
+    }
+    address = body.wallet_address;
+  }
   const content = (body.content || "").trim();
   if (!content || content.length > 500) {
     return NextResponse.json({ error: "Content must be 1-500 chars" }, { status: 400 });
   }
 
-  const bulletin = await createBulletin(address, content);
-  logActivity(address, 'bulletin_posted', { preview: content.slice(0, 100) }, 'mysocial');
+  const bulletin = await createBulletin(address!, content);
+  logActivity(address!, 'bulletin_posted', { preview: content.slice(0, 100) }, 'mysocial');
   return NextResponse.json(bulletin, { status: 201 });
 }

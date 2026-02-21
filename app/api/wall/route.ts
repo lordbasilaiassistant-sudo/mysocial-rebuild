@@ -10,26 +10,24 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  let commenter: string | null = null;
 
-  const session = await verifyToken(authHeader.slice(7));
-  let commenter: string;
-  if (session) {
-    commenter = session.wallet;
-  } else {
-    const body = await req.clone().json();
-    if (!body.commenter_address) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    commenter = body.commenter_address;
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const session = await verifyToken(authHeader.slice(7));
+    if (session) commenter = session.wallet;
   }
 
   const body = await req.json();
+
+  if (!commenter) {
+    if (!body.commenter_address) return NextResponse.json({ error: "No address provided" }, { status: 401 });
+    commenter = body.commenter_address;
+  }
   if (!body.profile_address || !body.content?.trim()) {
     return NextResponse.json({ error: "profile_address and content required" }, { status: 400 });
   }
 
-  const comment = await postWallComment(body.profile_address, commenter, body.content.trim());
+  const comment = await postWallComment(body.profile_address, commenter!, body.content.trim());
   return NextResponse.json(comment, { status: 201 });
 }
