@@ -5,18 +5,21 @@ import { verifyToken } from "@/lib/thryx-auth";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  let address: string | null = null;
+
+  // Try Bearer token auth first
   const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (authHeader?.startsWith("Bearer ")) {
+    const session = await verifyToken(authHeader.slice(7));
+    if (session) {
+      address = session.wallet;
+    }
   }
 
-  const session = await verifyToken(authHeader.slice(7));
-  let address: string;
-  if (session) {
-    address = session.wallet;
-  } else {
+  // Fallback: use address query param
+  if (!address) {
     const addr = req.nextUrl.searchParams.get("address");
-    if (!addr) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    if (!addr) return NextResponse.json({ error: "No address provided" }, { status: 401 });
     address = addr;
   }
 

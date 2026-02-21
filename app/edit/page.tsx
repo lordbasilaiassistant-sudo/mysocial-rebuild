@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
-import { DEFAULT_AVATAR } from "@/lib/constants";
+import { DEFAULT_AVATAR, THRYX_API } from "@/lib/constants";
 
 const TABS = ["Basic", "About", "Appearance", "Top 8"] as const;
 type Tab = typeof TABS[number];
@@ -181,20 +181,23 @@ export default function EditProfilePage() {
                         style={{ display: "none" }}
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
-                          if (!file || !token) return;
+                          if (!file) return;
+                          if (!address) { alert("Connect your wallet first"); return; }
                           setUploading(true);
                           try {
                             const form = new FormData();
                             form.append("file", file);
-                            const res = await fetch(`/api/upload?address=${address}`, {
+                            const headers: Record<string, string> = {};
+                            if (token) headers["Authorization"] = `Bearer ${token}`;
+                            const res = await fetch(`${THRYX_API}/api/upload?address=${address}`, {
                               method: "POST",
-                              headers: { Authorization: `Bearer ${token}` },
+                              headers,
                               body: form,
                             });
                             const data = await res.json();
                             if (data.url) setAvatarUrl(data.url);
                             else alert(data.error || "Upload failed");
-                          } catch { alert("Upload failed"); }
+                          } catch (err: any) { alert("Upload failed: " + (err?.message || "unknown error")); }
                           finally { setUploading(false); }
                         }}
                       />
@@ -236,21 +239,24 @@ export default function EditProfilePage() {
                       style={{ display: "none" }}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
-                        if (!file || !token) return;
+                        if (!file) return;
+                        if (!address) { alert("Connect your wallet first"); return; }
                         if (file.size > 10 * 1024 * 1024) { alert("Max 10MB"); return; }
                         setUploadingAudio(true);
                         try {
                           const form = new FormData();
                           form.append("file", file);
+                          const headers: Record<string, string> = {};
+                          if (token) headers["Authorization"] = `Bearer ${token}`;
                           const res = await fetch(`/api/upload?address=${address}&type=audio`, {
                             method: "POST",
-                            headers: { Authorization: `Bearer ${token}` },
+                            headers,
                             body: form,
                           });
                           const data = await res.json();
                           if (data.url) setAudioUrl(data.url);
                           else alert(data.error || "Upload failed");
-                        } catch { alert("Upload failed"); }
+                        } catch (err: any) { alert("Upload failed: " + (err?.message || "unknown error")); }
                         finally { setUploadingAudio(false); }
                       }}
                     />
