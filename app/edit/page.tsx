@@ -24,6 +24,7 @@ export default function EditProfilePage() {
   const [themeColor, setThemeColor] = useState("#003375");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [friends, setFriends] = useState<string[]>(Array(8).fill(""));
+  const [uploading, setUploading] = useState(false);
 
   // Load existing profile
   useEffect(() => {
@@ -158,22 +159,51 @@ export default function EditProfilePage() {
               </div>
               <div>
                 <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 4, color: "#333" }}>
-                  Avatar URL
+                  Profile Picture
                 </label>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <img
                     src={avatarUrl || DEFAULT_AVATAR}
                     alt="Preview"
                     className="ms-avatar-md"
                     onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
                   />
-                  <input
-                    className="ms-input"
-                    type="url"
-                    value={avatarUrl}
-                    onChange={e => setAvatarUrl(e.target.value)}
-                    placeholder="https://example.com/avatar.jpg"
-                  />
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label className="ms-btn ms-btn-ghost ms-btn-sm" style={{ cursor: "pointer", textAlign: "center" }}>
+                      {uploading ? "Uploading..." : "📷 Upload Photo"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !token) return;
+                          setUploading(true);
+                          try {
+                            const form = new FormData();
+                            form.append("file", file);
+                            const res = await fetch(`/api/upload?address=${address}`, {
+                              method: "POST",
+                              headers: { Authorization: `Bearer ${token}` },
+                              body: form,
+                            });
+                            const data = await res.json();
+                            if (data.url) setAvatarUrl(data.url);
+                            else alert(data.error || "Upload failed");
+                          } catch { alert("Upload failed"); }
+                          finally { setUploading(false); }
+                        }}
+                      />
+                    </label>
+                    <input
+                      className="ms-input"
+                      type="url"
+                      value={avatarUrl}
+                      onChange={e => setAvatarUrl(e.target.value)}
+                      placeholder="...or paste image URL"
+                      style={{ fontSize: 12 }}
+                    />
+                  </div>
                 </div>
               </div>
               <div>
