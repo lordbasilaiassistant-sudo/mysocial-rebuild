@@ -3,9 +3,13 @@ import { verifyToken } from "@/lib/thryx-auth";
 import { createBulletin, getBulletins } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 
-export async function GET() {
-  const bulletins = await getBulletins();
-  return NextResponse.json(bulletins);
+export async function GET(req: NextRequest) {
+  const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
+  const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "20"), 50);
+  const offset = (Math.max(page, 1) - 1) * limit;
+
+  const { bulletins, total } = await getBulletins(limit, offset);
+  return NextResponse.json({ bulletins, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {

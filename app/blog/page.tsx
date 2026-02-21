@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { DEFAULT_AVATAR } from "@/lib/constants";
-import { deployToken, pollDeployStatus } from "@/lib/token-integration";
+import { deployToken, pollDeployStatus, DeployMethod } from "@/lib/token-integration";
+import Breadcrumbs from "@/components/Breadcrumbs";
 
 interface BlogPost {
   id: number;
@@ -18,6 +19,7 @@ interface BlogPost {
   token_symbol: string;
   token_address: string;
   token_deploy_status: string;
+  deploy_method?: string;
   view_count: number;
   created_at: string;
 }
@@ -37,22 +39,39 @@ export default function BlogPage() {
   const { address, token } = useAuth();
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 10;
+
+  // Compose state
   const [showCompose, setShowCompose] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [tokenize, setTokenize] = useState(false);
   const [tokenName, setTokenName] = useState("");
   const [tokenSymbol, setTokenSymbol] = useState("");
+  const [deployMethod, setDeployMethod] = useState<DeployMethod>("bankr");
   const [publishing, setPublishing] = useState(false);
   const [deployStatus, setDeployStatus] = useState("");
 
-  useEffect(() => {
-    fetch("/api/blog")
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setPosts(Array.isArray(data) ? data : []))
+  const fetchPosts = (p: number) => {
+    setLoading(true);
+    fetch(`/api/blog?page=${p}&limit=${limit}`)
+      .then(r => r.ok ? r.json() : { posts: [], total: 0 })
+      .then(data => {
+        setPosts(data.posts || []);
+        setTotal(data.total || 0);
+        setPage(p);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchPosts(1);
   }, []);
+
+  const totalPages = Math.ceil(total / limit);
 
   const handlePublish = async () => {
     if (!title.trim() || !body.trim() || !address) return;
@@ -65,14 +84,19 @@ export default function BlogPage() {
 
       let jobId = "";
       if (tokenize && tokenName && tokenSymbol) {
-        setDeployStatus("Deploying token...");
-        const deployResult = await deployToken({
-          name: tokenName,
-          symbol: tokenSymbol,
-          description: `${title} — Blog post on MySocial by ${address.slice(0, 8)}`,
-          walletAddress: address,
-        });
-        jobId = deployResult.jobId;
+        if (deployMethod === "thryx") {
+          setDeployStatus("THRYX Coin Factory is coming soon! Post will be saved without tokenization.");
+        } else {
+          setDeployStatus("Deploying token via Bankr...");
+          const deployResult = await deployToken({
+            name: tokenName,
+            symbol: tokenSymbol,
+            description: `${title} — Blog post on MySocial by ${address.slice(0, 8)}`,
+            walletAddress: address,
+            deployMethod: "bankr",
+          });
+          jobId = deployResult.jobId;
+        }
       }
 
       const res = await fetch("/api/blog", {
@@ -82,11 +106,12 @@ export default function BlogPage() {
           wallet_address: address,
           title: title.trim(),
           body: body.trim(),
-          is_tokenized: tokenize,
+          is_tokenized: tokenize && deployMethod === "bankr",
           token_name: tokenName,
           token_symbol: tokenSymbol,
           token_deploy_job_id: jobId,
           token_deploy_status: jobId ? "pending" : "",
+          deploy_method: deployMethod,
         }),
       });
 
@@ -114,6 +139,7 @@ export default function BlogPage() {
         setTokenize(false);
         setTokenName("");
         setTokenSymbol("");
+        setDeployMethod("bankr");
         setShowCompose(false);
       }
     } catch (e: any) {
@@ -125,7 +151,9 @@ export default function BlogPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Blog" }]} />
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, marginTop: 8 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: "#003375" }}>Blog</h1>
         {address && (
           <button className="ms-btn" onClick={() => setShowCompose(!showCompose)}>
@@ -158,16 +186,53 @@ export default function BlogPage() {
               onChange={e => setBody(e.target.value)}
               rows={8}
             />
+
+            {/* Tokenize toggle */}
             <div className="ms-tokenize-toggle">
               <input type="checkbox" id="tokenize" checked={tokenize} onChange={e => setTokenize(e.target.checked)} />
               <label htmlFor="tokenize">🪙 Make this post a coin (deploy as token on Base)</label>
             </div>
+
             {tokenize && (
-              <div className="ms-tokenize-fields">
-                <input type="text" placeholder="Token Name" value={tokenName} onChange={e => setTokenName(e.target.value)} maxLength={30} />
-                <input type="text" placeholder="$SYMBOL" value={tokenSymbol} onChange={e => setTokenSymbol(e.target.value.toUpperCase())} maxLength={8} style={{ maxWidth: 120 }} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px", background: "#f8f9fb", border: "1px solid #e0e0e0", borderRadius: 4 }}>
+                <div className="ms-tokenize-fields">
+                  <input type="text" placeholder="Token Name" value={tokenName} onChange={e => setTokenName(e.target.value)} maxLength={30} />
+                  <input type="text" placeholder="$SYMBOL" value={tokenSymbol} onChange={e => setTokenSymbol(e.target.value.toUpperCase())} maxLength={8} style={{ maxWidth: 120 }} />
+                </div>
+
+                {/* Deploy method picker */}
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>Deploy via:</div>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontSize: 13 }}>
+                  <input
+                    type="radio"
+                    name="deployMethod"
+                    value="bankr"
+                    checked={deployMethod === "bankr"}
+                    onChange={() => setDeployMethod("bankr")}
+                    style={{ marginTop: 2 }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Bankr (Clanker)</div>
+                    <div style={{ color: "#888", fontSize: 12 }}>Deploys to Base via Clanker protocol. Standard Bankr fees apply.</div>
+                  </div>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontSize: 13, opacity: 0.6 }}>
+                  <input
+                    type="radio"
+                    name="deployMethod"
+                    value="thryx"
+                    checked={deployMethod === "thryx"}
+                    onChange={() => setDeployMethod("thryx")}
+                    style={{ marginTop: 2 }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Pair with $THRYX <span style={{ fontSize: 11, color: "#ff6600", fontWeight: 400 }}>(Coming Soon)</span></div>
+                    <div style={{ color: "#888", fontSize: 12 }}>THRYX Coin Factory — creates token paired with $THRYX liquidity.</div>
+                  </div>
+                </label>
               </div>
             )}
+
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button className="ms-btn" disabled={!title.trim() || !body.trim() || publishing} onClick={handlePublish}>
                 {publishing ? "Publishing..." : tokenize ? "Publish & Deploy Token" : "Publish Post"}
@@ -177,6 +242,7 @@ export default function BlogPage() {
         </div>
       )}
 
+      {/* Posts */}
       {loading ? (
         <div>{[1, 2].map(i => <div key={i} className="ms-post"><div className="ms-skeleton" style={{ height: 80 }} /></div>)}</div>
       ) : posts.length === 0 ? (
@@ -186,47 +252,71 @@ export default function BlogPage() {
           <div className="ms-empty-text">{address ? "Write your first blog post!" : "Connect your wallet to start blogging."}</div>
         </div>
       ) : (
-        posts.map(post => (
-          <div key={post.id} className="ms-post">
-            <div className="ms-post-header">
-              <Link href={`/profile/${post.wallet_address}`}>
-                <img className="ms-post-avatar" src={post.avatar_url || DEFAULT_AVATAR} alt=""
-                  onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
-              </Link>
-              <div className="ms-post-meta">
-                <Link href={`/profile/${post.wallet_address}`} className="ms-post-author">
-                  {post.display_name || `${post.wallet_address.slice(0, 8)}...`}
-                </Link>
-                <span className="ms-post-time"> · {timeAgo(post.created_at)}</span>
-                {post.is_tokenized && (
-                  <span className="ms-token-badge" style={{ marginLeft: 6 }}>
-                    🪙 {post.token_symbol || "TOKEN"}
-                  </span>
-                )}
+        <>
+          {posts.map(post => (
+            <Link key={post.id} href={`/blog/${post.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+              <div className="ms-post ms-post-clickable">
+                <div className="ms-post-header">
+                  <img className="ms-post-avatar" src={post.avatar_url || DEFAULT_AVATAR} alt=""
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                  <div className="ms-post-meta">
+                    <span className="ms-post-author">
+                      {post.display_name || `${post.wallet_address.slice(0, 8)}...`}
+                    </span>
+                    <span className="ms-post-time"> · {timeAgo(post.created_at)}</span>
+                    {post.is_tokenized && (
+                      <span className="ms-token-badge" style={{ marginLeft: 6 }}>
+                        🪙 {post.token_symbol || "TOKEN"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 4, color: "#003375" }}>{post.title}</h3>
+                <div className="ms-post-body">
+                  {post.body.slice(0, 300)}{post.body.length > 300 ? "..." : ""}
+                </div>
+                <div className="ms-post-actions" onClick={e => e.preventDefault()}>
+                  <span style={{ fontSize: 12, color: "#888" }}>👁 {post.view_count} views</span>
+                  {post.token_address && (
+                    <a
+                      href={`https://basescan.org/token/${post.token_address}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="ms-post-action"
+                      style={{ color: "#003375" }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      📊 View Token
+                    </a>
+                  )}
+                </div>
               </div>
+            </Link>
+          ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="ms-pagination">
+              <button
+                className="ms-btn ms-btn-sm"
+                disabled={page <= 1}
+                onClick={() => fetchPosts(page - 1)}
+              >
+                ← Newer
+              </button>
+              <span style={{ fontSize: 13, color: "#888" }}>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                className="ms-btn ms-btn-sm"
+                disabled={page >= totalPages}
+                onClick={() => fetchPosts(page + 1)}
+              >
+                Older →
+              </button>
             </div>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>{post.title}</h3>
-            <div className="ms-post-body">
-              {post.body.slice(0, 400)}{post.body.length > 400 ? "..." : ""}
-            </div>
-            <div className="ms-post-actions">
-              <span style={{ fontSize: 12, color: "#888" }}>👁 {post.view_count} views</span>
-              <button className="ms-post-action">💬 Comment</button>
-              <button className="ms-post-action">❤️ Like</button>
-              {post.token_address && (
-                <a
-                  href={`https://basescan.org/token/${post.token_address}`}
-                  target="_blank"
-                  rel="noopener"
-                  className="ms-post-action"
-                  style={{ color: "#003375" }}
-                >
-                  📊 View Token
-                </a>
-              )}
-            </div>
-          </div>
-        ))
+          )}
+        </>
       )}
     </div>
   );

@@ -3,6 +3,8 @@ import { getAuthHeaders } from "./thryx-auth";
 
 const MEMEMINT_API = `${THRYX_API}/api/mememint`;
 
+export type DeployMethod = "bankr" | "thryx";
+
 export async function deployToken(opts: {
   name: string;
   symbol: string;
@@ -10,7 +12,15 @@ export async function deployToken(opts: {
   walletAddress: string;
   imageUrl?: string;
   website?: string;
+  deployMethod?: DeployMethod;
 }): Promise<{ submitted: boolean; jobId: string }> {
+  const method = opts.deployMethod || "bankr";
+
+  if (method === "thryx") {
+    throw new Error("THRYX Coin Factory is coming soon! Use Bankr for now.");
+  }
+
+  // Bankr deployment via thryx.mom gateway
   const res = await fetch(`${MEMEMINT_API}/deploy`, {
     method: "POST",
     headers: {

@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/thryx-auth";
 import { createBlogPost, getBlogPosts } from "@/lib/db";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const posts = await getBlogPosts();
-    return NextResponse.json(posts);
+    const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "10"), 50);
+    const offset = (Math.max(page, 1) - 1) * limit;
+
+    const { posts, total } = await getBlogPosts(limit, offset);
+    return NextResponse.json({ posts, total, page, limit });
   } catch (e: any) {
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ posts: [], total: 0, page: 1, limit: 10 }, { status: 200 });
   }
 }
 
@@ -38,6 +42,7 @@ export async function POST(req: NextRequest) {
     token_symbol: body.token_symbol || "",
     token_deploy_job_id: body.token_deploy_job_id || "",
     token_deploy_status: body.token_deploy_status || "",
+    deploy_method: body.deploy_method || "bankr",
   });
 
   return NextResponse.json(post, { status: 201 });

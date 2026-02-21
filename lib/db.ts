@@ -87,13 +87,14 @@ export async function createBulletin(address: string, content: string): Promise<
   return rows[0] as Bulletin;
 }
 
-export async function getBulletins(limit = 50): Promise<Bulletin[]> {
+export async function getBulletins(limit = 20, offset = 0): Promise<{ bulletins: Bulletin[]; total: number }> {
   const { rows } = await sql`
-    SELECT b.*, p.display_name, p.avatar_url, p.theme_color FROM bulletins b
+    SELECT b.*, p.display_name, p.avatar_url, p.theme_color, COUNT(*) OVER() AS total_count FROM bulletins b
     LEFT JOIN profiles p ON b.wallet_address = p.wallet_address
-    ORDER BY b.created_at DESC LIMIT ${limit}
+    ORDER BY b.created_at DESC LIMIT ${limit} OFFSET ${offset}
   `;
-  return rows as Bulletin[];
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  return { bulletins: rows.map(({ total_count, ...rest }) => rest) as Bulletin[], total };
 }
 
 // ── Blog Posts ──
@@ -108,6 +109,7 @@ export interface BlogPost {
   token_address: string;
   token_deploy_job_id: string;
   token_deploy_status: string;
+  deploy_method: string;
   view_count: number;
   created_at: string;
   updated_at: string;
@@ -119,25 +121,39 @@ export async function createBlogPost(address: string, data: {
   title: string; body: string;
   is_tokenized?: boolean; token_name?: string; token_symbol?: string;
   token_deploy_job_id?: string; token_deploy_status?: string;
+  deploy_method?: string;
 }): Promise<BlogPost> {
   const addr = address.toLowerCase();
   const { rows } = await sql`
-    INSERT INTO blog_posts (wallet_address, title, body, is_tokenized, token_name, token_symbol, token_deploy_job_id, token_deploy_status)
+    INSERT INTO blog_posts (wallet_address, title, body, is_tokenized, token_name, token_symbol, token_deploy_job_id, token_deploy_status, deploy_method)
     VALUES (${addr}, ${data.title}, ${data.body}, ${data.is_tokenized || false},
       ${data.token_name || ''}, ${data.token_symbol || ''},
-      ${data.token_deploy_job_id || ''}, ${data.token_deploy_status || ''})
+      ${data.token_deploy_job_id || ''}, ${data.token_deploy_status || ''},
+      ${data.deploy_method || 'bankr'})
     RETURNING *
   `;
   return rows[0] as BlogPost;
 }
 
-export async function getBlogPosts(limit = 50): Promise<BlogPost[]> {
+export async function getBlogPosts(limit = 10, offset = 0): Promise<{ posts: BlogPost[]; total: number }> {
   const { rows } = await sql`
-    SELECT bp.*, p.display_name, p.avatar_url FROM blog_posts bp
+    SELECT bp.*, p.display_name, p.avatar_url, COUNT(*) OVER() AS total_count FROM blog_posts bp
     LEFT JOIN profiles p ON bp.wallet_address = p.wallet_address
-    ORDER BY bp.created_at DESC LIMIT ${limit}
+    ORDER BY bp.created_at DESC LIMIT ${limit} OFFSET ${offset}
   `;
-  return rows as BlogPost[];
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  return { posts: rows.map(({ total_count, ...rest }) => rest) as BlogPost[], total };
+}
+
+export async function getBlogPostsByUser(address: string, limit = 10, offset = 0): Promise<{ posts: BlogPost[]; total: number }> {
+  const { rows } = await sql`
+    SELECT bp.*, p.display_name, p.avatar_url, COUNT(*) OVER() AS total_count FROM blog_posts bp
+    LEFT JOIN profiles p ON bp.wallet_address = p.wallet_address
+    WHERE bp.wallet_address = ${address.toLowerCase()}
+    ORDER BY bp.created_at DESC LIMIT ${limit} OFFSET ${offset}
+  `;
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  return { posts: rows.map(({ total_count, ...rest }) => rest) as BlogPost[], total };
 }
 
 export async function getBlogPost(id: number): Promise<BlogPost | null> {

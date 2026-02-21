@@ -76,6 +76,11 @@ export async function GET() {
       )
     `;
 
+    // Add deploy_method column to blog_posts
+    try {
+      await sql`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS deploy_method VARCHAR(20) DEFAULT 'bankr'`;
+    } catch { /* already exists */ }
+
     return NextResponse.json({ ok: true, message: "All tables created/verified" });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

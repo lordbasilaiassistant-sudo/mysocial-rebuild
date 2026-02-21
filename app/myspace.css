@@ -707,6 +707,60 @@ a:hover { color: #0055cc; text-decoration: underline; }
 .ms-pager a:hover { background: #f0f4fa; text-decoration: none; }
 .ms-pager .active { background: #003375; color: #fff; border-color: #003375; }
 
+/* ═══ Breadcrumbs ═══ */
+.ms-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-size: 13px;
+  color: #888;
+  padding: 4px 0;
+}
+.ms-breadcrumb-link {
+  color: #0033CC;
+  text-decoration: none;
+}
+.ms-breadcrumb-link:hover {
+  color: #0055cc;
+  text-decoration: underline;
+}
+.ms-breadcrumb-sep {
+  color: #ccc;
+  margin: 0 8px;
+  font-size: 11px;
+}
+.ms-breadcrumb-current {
+  color: #333;
+  font-weight: 500;
+}
+
+/* ═══ Pagination ═══ */
+.ms-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+/* ═══ Clickable Post ═══ */
+.ms-post-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ms-post-clickable:hover {
+  border-color: #003375;
+  box-shadow: 0 2px 8px rgba(0, 51, 117, 0.08);
+}
+
+/* ═══ Token Card (blog post page) ═══ */
+.ms-token-card {
+  background: #f8f9fb;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px;
+}
+
 /* ═══ Empty State ═══ */
 .ms-empty {
   text-align: center;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { DEFAULT_AVATAR } from "@/lib/constants";
+import Breadcrumbs from "@/components/Breadcrumbs";
 
 interface Bulletin {
   id: number;
@@ -30,14 +31,22 @@ export default function BulletinsPage() {
   const { address, token } = useAuth();
   const [bulletins, setBulletins] = useState<Bulletin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
   const [myAvatar, setMyAvatar] = useState("");
+  const limit = 20;
 
   useEffect(() => {
-    fetch("/api/bulletins")
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setBulletins(Array.isArray(data) ? data : []))
+    fetch(`/api/bulletins?page=1&limit=${limit}`)
+      .then(r => r.ok ? r.json() : { bulletins: [], total: 0 })
+      .then(data => {
+        setBulletins(data.bulletins || []);
+        setTotal(data.total || 0);
+        setPage(1);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -52,6 +61,20 @@ export default function BulletinsPage() {
       })
       .catch(() => {});
   }, [address]);
+
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    fetch(`/api/bulletins?page=${nextPage}&limit=${limit}`)
+      .then(r => r.ok ? r.json() : { bulletins: [], total: 0 })
+      .then(data => {
+        setBulletins(prev => [...prev, ...(data.bulletins || [])]);
+        setTotal(data.total || 0);
+        setPage(nextPage);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  };
 
   const handlePost = async () => {
     if (!postText.trim() || !address) return;
@@ -76,6 +99,7 @@ export default function BulletinsPage() {
           ...bulletin,
           display_name: address.slice(0, 8),
         }, ...prev]);
+        setTotal(prev => prev + 1);
         setPostText("");
       }
     } catch (e) {
@@ -85,9 +109,13 @@ export default function BulletinsPage() {
     }
   };
 
+  const hasMore = bulletins.length < total;
+
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#003375", marginBottom: 12 }}>
+      <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Bulletins" }]} />
+
+      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#003375", marginBottom: 12, marginTop: 8 }}>
         Bulletins
       </h1>
 
@@ -150,37 +178,52 @@ export default function BulletinsPage() {
           <div className="ms-empty-text">Be the first to post a bulletin!</div>
         </div>
       ) : (
-        bulletins.map(b => (
-          <div key={b.id} className="ms-post">
-            <div className="ms-post-header">
-              <Link href={`/profile/${b.wallet_address}`}>
-                <img
-                  className="ms-post-avatar"
-                  src={b.avatar_url || DEFAULT_AVATAR}
-                  alt=""
-                  onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
-                />
-              </Link>
-              <div className="ms-post-meta">
-                <Link href={`/profile/${b.wallet_address}`} className="ms-post-author">
-                  {b.display_name || `${b.wallet_address.slice(0, 8)}...`}
+        <>
+          {bulletins.map(b => (
+            <div key={b.id} className="ms-post">
+              <div className="ms-post-header">
+                <Link href={`/profile/${b.wallet_address}`}>
+                  <img
+                    className="ms-post-avatar"
+                    src={b.avatar_url || DEFAULT_AVATAR}
+                    alt=""
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
+                  />
                 </Link>
-                <span className="ms-post-handle">
-                  {b.wallet_address.slice(0, 6)}...{b.wallet_address.slice(-4)}
-                </span>
-                <div className="ms-post-time">{timeAgo(b.created_at)}</div>
+                <div className="ms-post-meta">
+                  <Link href={`/profile/${b.wallet_address}`} className="ms-post-author">
+                    {b.display_name || `${b.wallet_address.slice(0, 8)}...`}
+                  </Link>
+                  <span className="ms-post-handle">
+                    {b.wallet_address.slice(0, 6)}...{b.wallet_address.slice(-4)}
+                  </span>
+                  <div className="ms-post-time">{timeAgo(b.created_at)}</div>
+                </div>
+              </div>
+              <div className="ms-post-body">
+                {b.content}
+              </div>
+              <div className="ms-post-actions">
+                <button className="ms-post-action">💬 Reply</button>
+                <button className="ms-post-action">🔄 Share</button>
+                <button className="ms-post-action">❤️ Like</button>
               </div>
             </div>
-            <div className="ms-post-body">
-              {b.content}
+          ))}
+
+          {/* Load More */}
+          {hasMore && (
+            <div style={{ textAlign: "center", padding: "16px 0" }}>
+              <button
+                className="ms-btn ms-btn-ghost"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading..." : "Load More Bulletins"}
+              </button>
             </div>
-            <div className="ms-post-actions">
-              <button className="ms-post-action">💬 Reply</button>
-              <button className="ms-post-action">🔄 Share</button>
-              <button className="ms-post-action">❤️ Like</button>
-            </div>
-          </div>
-        ))
+          )}
+        </>
       )}
     </div>
   );
