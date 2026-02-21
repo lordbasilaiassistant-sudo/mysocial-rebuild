@@ -248,7 +248,7 @@ export default function EditProfilePage() {
                           form.append("file", file);
                           const headers: Record<string, string> = {};
                           if (token) headers["Authorization"] = `Bearer ${token}`;
-                          const res = await fetch(`/api/upload?address=${address}&type=audio`, {
+                          const res = await fetch(`${THRYX_API}/api/upload?address=${address}&type=audio`, {
                             method: "POST",
                             headers,
                             body: form,
