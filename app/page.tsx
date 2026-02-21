@@ -60,7 +60,8 @@ export default function HomePage() {
     fetch("https://thryx.mom/api/price")
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.price) setThryxPrice(`$${parseFloat(data.price).toFixed(8)}`);
+        const p = data?.priceUsd || data?.price;
+        if (p) setThryxPrice(`$${parseFloat(p).toFixed(8)}`);
         else setThryxPrice("—");
       })
       .catch(() => setThryxPrice("—"));
