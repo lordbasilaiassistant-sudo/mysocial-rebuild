@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     bio: body.bio,
     interests: body.interests,
     listening_to: body.listening_to,
+    audio_url: body.audio_url,
     theme_color: body.theme_color,
     avatar_url: body.avatar_url,
   });

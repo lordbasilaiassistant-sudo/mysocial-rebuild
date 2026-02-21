@@ -21,10 +21,12 @@ export default function EditProfilePage() {
   const [bio, setBio] = useState("");
   const [interests, setInterests] = useState("");
   const [listeningTo, setListeningTo] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [themeColor, setThemeColor] = useState("#003375");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [friends, setFriends] = useState<string[]>(Array(8).fill(""));
   const [uploading, setUploading] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
 
   // Load existing profile
   useEffect(() => {
@@ -38,6 +40,7 @@ export default function EditProfilePage() {
           setBio(p.bio || "");
           setInterests(p.interests || "");
           setListeningTo(p.listening_to || "");
+          setAudioUrl(p.audio_url || "");
           setThemeColor(p.theme_color || "#003375");
           setAvatarUrl(p.avatar_url || "");
         }
@@ -74,6 +77,7 @@ export default function EditProfilePage() {
           bio,
           interests,
           listening_to: listeningTo,
+          audio_url: audioUrl,
           theme_color: themeColor,
           avatar_url: avatarUrl,
           friends: friends
@@ -208,7 +212,7 @@ export default function EditProfilePage() {
               </div>
               <div>
                 <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 4, color: "#333" }}>
-                  Currently Listening To
+                  Now Playing (song title)
                 </label>
                 <input
                   className="ms-input"
@@ -218,6 +222,51 @@ export default function EditProfilePage() {
                   placeholder="Artist — Song Title"
                   maxLength={100}
                 />
+              </div>
+              <div>
+                <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 4, color: "#333" }}>
+                  Profile Music
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label className="ms-btn ms-btn-ghost ms-btn-sm" style={{ cursor: "pointer", textAlign: "center" }}>
+                    {uploadingAudio ? "Uploading..." : "🎵 Upload Audio File"}
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file || !token) return;
+                        if (file.size > 10 * 1024 * 1024) { alert("Max 10MB"); return; }
+                        setUploadingAudio(true);
+                        try {
+                          const form = new FormData();
+                          form.append("file", file);
+                          const res = await fetch(`/api/upload?address=${address}&type=audio`, {
+                            method: "POST",
+                            headers: { Authorization: `Bearer ${token}` },
+                            body: form,
+                          });
+                          const data = await res.json();
+                          if (data.url) setAudioUrl(data.url);
+                          else alert(data.error || "Upload failed");
+                        } catch { alert("Upload failed"); }
+                        finally { setUploadingAudio(false); }
+                      }}
+                    />
+                  </label>
+                  <input
+                    className="ms-input"
+                    type="url"
+                    value={audioUrl}
+                    onChange={e => setAudioUrl(e.target.value)}
+                    placeholder="...or paste audio URL (mp3, wav, etc.)"
+                    style={{ fontSize: 12 }}
+                  />
+                  {audioUrl && (
+                    <audio controls src={audioUrl} style={{ width: "100%", height: 32, marginTop: 4 }} />
+                  )}
+                </div>
               </div>
             </div>
           )}

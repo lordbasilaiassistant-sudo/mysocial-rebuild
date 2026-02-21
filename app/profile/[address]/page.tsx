@@ -12,6 +12,7 @@ interface Profile {
   bio: string;
   interests: string;
   listening_to: string;
+  audio_url: string;
   theme_color: string;
   avatar_url: string;
   visitor_count: number;
@@ -209,12 +210,19 @@ export default function ProfilePage() {
         {/* Right main content */}
         <div>
           {/* Music Player */}
-          {profile.listening_to && (
+          {(profile.listening_to || profile.audio_url) && (
             <div className="ms-player">
               <div className="ms-player-info">
                 <div className="ms-player-title">🎵 Now Playing</div>
-                <div className="ms-player-artist">{profile.listening_to}</div>
+                <div className="ms-player-artist">{profile.listening_to || "My Music"}</div>
               </div>
+              {profile.audio_url && (
+                <audio
+                  controls
+                  src={profile.audio_url}
+                  style={{ width: "100%", height: 36, marginTop: 8 }}
+                />
+              )}
             </div>
           )}
 

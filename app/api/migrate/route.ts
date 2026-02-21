@@ -55,6 +55,13 @@ export async function GET() {
       )
     `;
 
+    // Add audio_url column if missing
+    try {
+      await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS audio_url TEXT DEFAULT ''`;
+    } catch {
+      // Column may already exist
+    }
+
     await sql`
       CREATE TABLE IF NOT EXISTS wall_comments (
         id SERIAL PRIMARY KEY,
