@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ addr
   }
 
   return NextResponse.json({
-    profile: profile || { wallet_address: address.toLowerCase(), display_name: "", bio: "", interests: "", listening_to: "", theme_color: "#22d3ee", avatar_url: "", visitor_count: visitorCount },
+    profile: profile || { wallet_address: address.toLowerCase(), display_name: "", bio: "", interests: "", listening_to: "", audio_url: "", theme_color: "#22d3ee", avatar_url: "", visitor_count: visitorCount },
     friends,
   });
 }
