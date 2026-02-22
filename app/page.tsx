@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { DEFAULT_AVATAR } from "@/lib/constants";
 
 interface FeaturedProfile {
@@ -18,6 +18,7 @@ interface Post {
   display_name: string;
   avatar_url?: string;
   content: string;
+  image_url?: string;
   subject?: string;
   created_at: string;
   type: "bulletin" | "blog";
@@ -46,6 +47,14 @@ export default function HomePage() {
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
   const [myAvatar, setMyAvatar] = useState("");
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  // Image upload state
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { token } = useAuth();
 
   useEffect(() => {
     fetch("/api/featured")
@@ -108,6 +117,32 @@ export default function HomePage() {
       .finally(() => setLoadingMore(false));
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !address) return;
+    setImagePreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/upload?type=post&address=${address}`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setImageUrl(data.url);
+      } else {
+        setImagePreview("");
+      }
+    } catch {
+      setImagePreview("");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handlePost = async () => {
     if (!postText.trim() || !address) return;
     setPosting(true);
@@ -118,6 +153,7 @@ export default function HomePage() {
         body: JSON.stringify({
           wallet_address: address,
           content: postText.trim(),
+          image_url: imageUrl,
         }),
       });
       if (res.ok) {
@@ -129,12 +165,22 @@ export default function HomePage() {
         }, ...prev]);
         setFeedTotal(prev => prev + 1);
         setPostText("");
+        setImageUrl("");
+        setImagePreview("");
       }
     } catch (e) {
       console.error("Post error:", e);
     } finally {
       setPosting(false);
     }
+  };
+
+  const handleShare = (post: Post) => {
+    const text = `${post.content.slice(0, 100)}${post.content.length > 100 ? "..." : ""} — ${post.display_name || post.wallet_address.slice(0, 8)} on MySocial`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(post.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
   };
 
   const hasMoreFeed = feed.length < feedTotal;
@@ -227,6 +273,9 @@ export default function HomePage() {
                   <div className="ms-post-body">
                     {post.content.slice(0, 280)}{post.content.length > 280 ? "..." : ""}
                   </div>
+                  {post.image_url && (
+                    <img src={post.image_url} alt="" style={{ width: "100%", maxHeight: 240, objectFit: "cover", borderRadius: 8, marginTop: 8 }} />
+                  )}
                 </div>
               ))}
             </div>
@@ -258,13 +307,37 @@ export default function HomePage() {
                 onChange={e => setPostText(e.target.value)}
                 rows={2}
               />
+              {imagePreview && (
+                <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+                  <img src={imagePreview} alt="" style={{ maxWidth: "100%", maxHeight: 160, borderRadius: 8, border: "1px solid #e0e0e0" }} />
+                  <button
+                    onClick={() => { setImageUrl(""); setImagePreview(""); }}
+                    style={{
+                      position: "absolute", top: 4, right: 4,
+                      background: "rgba(0,0,0,0.6)", color: "#fff",
+                      border: "none", borderRadius: "50%", width: 24, height: 24,
+                      cursor: "pointer", fontSize: 12, lineHeight: "24px", textAlign: "center",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <div className="ms-compose-actions">
                 <div className="ms-compose-tools">
-                  {/* Future: image, mood, tokenize */}
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
+                  <button
+                    className="ms-post-action"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    style={{ fontSize: 16 }}
+                  >
+                    {uploading ? "..." : "📷"}
+                  </button>
                 </div>
                 <button
                   className="ms-btn"
-                  disabled={!postText.trim() || posting}
+                  disabled={!postText.trim() || posting || uploading}
                   onClick={handlePost}
                 >
                   {posting ? "Posting..." : "Post"}
@@ -307,10 +380,19 @@ export default function HomePage() {
                 <div className="ms-post-body">
                   {post.content}
                 </div>
+                {post.image_url && (
+                  <img src={post.image_url} alt="" style={{ width: "100%", maxHeight: 400, objectFit: "cover", borderRadius: 8, marginTop: 8 }} />
+                )}
                 <div className="ms-post-actions">
-                  <button className="ms-post-action">💬 Reply</button>
-                  <button className="ms-post-action">🔄 Share</button>
-                  <button className="ms-post-action">❤️ Like</button>
+                  <button className="ms-post-action ms-post-action-disabled" title="Coming soon">
+                    💬 Reply
+                  </button>
+                  <button className="ms-post-action" onClick={() => handleShare(post)}>
+                    {copiedId === post.id ? "✓ Copied!" : "🔗 Share"}
+                  </button>
+                  <button className="ms-post-action ms-post-action-disabled" title="Coming soon">
+                    ❤️ Like
+                  </button>
                 </div>
               </div>
             ))}

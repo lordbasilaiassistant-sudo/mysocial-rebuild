@@ -12,6 +12,7 @@ interface BlogPost {
   avatar_url?: string;
   title: string;
   body: string;
+  image_url?: string;
   is_tokenized: boolean;
   token_name: string;
   token_symbol: string;
@@ -127,6 +128,13 @@ export default function BlogPostClient({
           <h1 style={{ fontSize: 22, fontWeight: 800, color: "#003375", marginBottom: 16 }}>
             {post.title}
           </h1>
+          {post.image_url && (
+            <img
+              src={post.image_url}
+              alt=""
+              style={{ width: "100%", maxHeight: 500, objectFit: "cover", borderRadius: 8, marginBottom: 16 }}
+            />
+          )}
           <div style={{ fontSize: 14, lineHeight: 1.8, whiteSpace: "pre-wrap", color: "#333" }}>
             {post.body}
           </div>
@@ -147,7 +155,7 @@ export default function BlogPostClient({
               </div>
               {post.deploy_method && (
                 <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
-                  Deployed via: {post.deploy_method === "thryx" ? "THRYX Coin Factory" : "Bankr (Clanker)"}
+                  Deployed via: {post.deploy_method === "thryx" ? "THRYX Coin Factory" : "Bankr"}
                 </div>
               )}
               {post.token_address ? (

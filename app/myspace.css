@@ -398,6 +398,11 @@ a:hover { color: #0055cc; text-decoration: underline; }
   transition: color 0.15s, background 0.15s;
 }
 .ms-post-action:hover { color: #003375; background: #f0f4fa; }
+.ms-post-action-disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
 
 /* ═══ Token Badge on posts ═══ */
 .ms-token-badge {

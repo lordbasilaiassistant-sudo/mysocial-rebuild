@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Content must be 1-500 chars" }, { status: 400 });
   }
 
-  const bulletin = await createBulletin(address!, content);
+  const bulletin = await createBulletin(address!, content, body.image_url || "");
   logActivity(address!, 'bulletin_posted', { preview: content.slice(0, 100) }, 'mysocial');
   return NextResponse.json(bulletin, { status: 201 });
 }

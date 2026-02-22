@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { DEFAULT_AVATAR } from "@/lib/constants";
@@ -12,6 +12,7 @@ interface Bulletin {
   display_name: string;
   avatar_url?: string;
   content: string;
+  image_url?: string;
   created_at: string;
 }
 
@@ -37,7 +38,14 @@ export default function BulletinsPage() {
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
   const [myAvatar, setMyAvatar] = useState("");
+  const [copiedId, setCopiedId] = useState<number | null>(null);
   const limit = 20;
+
+  // Image upload state
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch(`/api/bulletins?page=1&limit=${limit}`)
@@ -76,6 +84,32 @@ export default function BulletinsPage() {
       .finally(() => setLoadingMore(false));
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !address) return;
+    setImagePreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/upload?type=post&address=${address}`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setImageUrl(data.url);
+      } else {
+        setImagePreview("");
+      }
+    } catch {
+      setImagePreview("");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handlePost = async () => {
     if (!postText.trim() || !address) return;
     setPosting(true);
@@ -91,6 +125,7 @@ export default function BulletinsPage() {
         body: JSON.stringify({
           wallet_address: address,
           content: postText.trim(),
+          image_url: imageUrl,
         }),
       });
       if (res.ok) {
@@ -101,12 +136,22 @@ export default function BulletinsPage() {
         }, ...prev]);
         setTotal(prev => prev + 1);
         setPostText("");
+        setImageUrl("");
+        setImagePreview("");
       }
     } catch (e) {
       console.error("Post error:", e);
     } finally {
       setPosting(false);
     }
+  };
+
+  const handleShare = (b: Bulletin) => {
+    const text = `${b.content.slice(0, 100)}${b.content.length > 100 ? "..." : ""} — ${b.display_name || b.wallet_address.slice(0, 8)} on MySocial`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(b.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
   };
 
   const hasMore = bulletins.length < total;
@@ -134,13 +179,40 @@ export default function BulletinsPage() {
                 rows={3}
                 maxLength={500}
               />
+              {imagePreview && (
+                <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+                  <img src={imagePreview} alt="" style={{ maxWidth: "100%", maxHeight: 160, borderRadius: 8, border: "1px solid #e0e0e0" }} />
+                  <button
+                    onClick={() => { setImageUrl(""); setImagePreview(""); }}
+                    style={{
+                      position: "absolute", top: 4, right: 4,
+                      background: "rgba(0,0,0,0.6)", color: "#fff",
+                      border: "none", borderRadius: "50%", width: 24, height: 24,
+                      cursor: "pointer", fontSize: 12, lineHeight: "24px", textAlign: "center",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <div className="ms-compose-actions">
+                <div className="ms-compose-tools">
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
+                  <button
+                    className="ms-post-action"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    style={{ fontSize: 13 }}
+                  >
+                    {uploading ? "..." : "📷"}
+                  </button>
+                </div>
                 <span style={{ fontSize: 12, color: "#888" }}>
                   {postText.length}/500
                 </span>
                 <button
                   className="ms-btn"
-                  disabled={!postText.trim() || posting}
+                  disabled={!postText.trim() || posting || uploading}
                   onClick={handlePost}
                 >
                   {posting ? "Posting..." : "Post Bulletin"}
@@ -203,10 +275,23 @@ export default function BulletinsPage() {
               <div className="ms-post-body">
                 {b.content}
               </div>
+              {b.image_url && (
+                <img
+                  src={b.image_url}
+                  alt=""
+                  style={{ width: "100%", maxHeight: 400, objectFit: "cover", borderRadius: 8, marginTop: 8 }}
+                />
+              )}
               <div className="ms-post-actions">
-                <button className="ms-post-action">💬 Reply</button>
-                <button className="ms-post-action">🔄 Share</button>
-                <button className="ms-post-action">❤️ Like</button>
+                <button className="ms-post-action ms-post-action-disabled" title="Coming soon">
+                  💬 Reply
+                </button>
+                <button className="ms-post-action" onClick={() => handleShare(b)}>
+                  {copiedId === b.id ? "✓ Copied!" : "🔗 Share"}
+                </button>
+                <button className="ms-post-action ms-post-action-disabled" title="Coming soon">
+                  ❤️ Like
+                </button>
               </div>
             </div>
           ))}

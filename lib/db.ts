@@ -74,15 +74,16 @@ export interface Bulletin {
   id: number;
   wallet_address: string;
   content: string;
+  image_url?: string;
   created_at: string;
   display_name?: string;
   avatar_url?: string;
   theme_color?: string;
 }
 
-export async function createBulletin(address: string, content: string): Promise<Bulletin> {
+export async function createBulletin(address: string, content: string, imageUrl?: string): Promise<Bulletin> {
   const { rows } = await sql`
-    INSERT INTO bulletins (wallet_address, content) VALUES (${address.toLowerCase()}, ${content}) RETURNING *
+    INSERT INTO bulletins (wallet_address, content, image_url) VALUES (${address.toLowerCase()}, ${content}, ${imageUrl || ''}) RETURNING *
   `;
   return rows[0] as Bulletin;
 }
@@ -103,6 +104,7 @@ export interface BlogPost {
   wallet_address: string;
   title: string;
   body: string;
+  image_url?: string;
   is_tokenized: boolean;
   token_name: string;
   token_symbol: string;
@@ -118,15 +120,16 @@ export interface BlogPost {
 }
 
 export async function createBlogPost(address: string, data: {
-  title: string; body: string;
+  title: string; body: string; image_url?: string;
   is_tokenized?: boolean; token_name?: string; token_symbol?: string;
   token_deploy_job_id?: string; token_deploy_status?: string;
   deploy_method?: string;
 }): Promise<BlogPost> {
   const addr = address.toLowerCase();
   const { rows } = await sql`
-    INSERT INTO blog_posts (wallet_address, title, body, is_tokenized, token_name, token_symbol, token_deploy_job_id, token_deploy_status, deploy_method)
-    VALUES (${addr}, ${data.title}, ${data.body}, ${data.is_tokenized || false},
+    INSERT INTO blog_posts (wallet_address, title, body, image_url, is_tokenized, token_name, token_symbol, token_deploy_job_id, token_deploy_status, deploy_method)
+    VALUES (${addr}, ${data.title}, ${data.body}, ${data.image_url || ''},
+      ${data.is_tokenized || false},
       ${data.token_name || ''}, ${data.token_symbol || ''},
       ${data.token_deploy_job_id || ''}, ${data.token_deploy_status || ''},
       ${data.deploy_method || 'bankr'})

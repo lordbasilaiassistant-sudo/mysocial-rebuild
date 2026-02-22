@@ -81,6 +81,14 @@ export async function GET() {
       await sql`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS deploy_method VARCHAR(20) DEFAULT 'bankr'`;
     } catch { /* already exists */ }
 
+    // Add image_url columns for post images
+    try {
+      await sql`ALTER TABLE bulletins ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT ''`;
+    } catch { /* already exists */ }
+    try {
+      await sql`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT ''`;
+    } catch { /* already exists */ }
+
     return NextResponse.json({ ok: true, message: "All tables created/verified" });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

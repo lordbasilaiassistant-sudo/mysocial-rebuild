@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
   const post = await createBlogPost(address!, {
     title: body.title.trim(),
     body: body.body.trim(),
+    image_url: body.image_url || "",
     is_tokenized: body.is_tokenized || false,
     token_name: body.token_name || "",
     token_symbol: body.token_symbol || "",

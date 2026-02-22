@@ -12,6 +12,7 @@ export async function deployToken(opts: {
   walletAddress: string;
   imageUrl?: string;
   website?: string;
+  twitter?: string;
   deployMethod?: DeployMethod;
 }): Promise<{ submitted: boolean; jobId: string }> {
   const method = opts.deployMethod || "bankr";
@@ -34,6 +35,7 @@ export async function deployToken(opts: {
       walletAddress: opts.walletAddress,
       imageUrl: opts.imageUrl || null,
       website: opts.website || "https://mysocial.mom",
+      twitter: opts.twitter || undefined,
     }),
   });
   if (!res.ok) {

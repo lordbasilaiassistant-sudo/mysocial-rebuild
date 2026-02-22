@@ -49,12 +49,16 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = file.name.split(".").pop() || (uploadType === "audio" ? "mp3" : "jpg");
-  const folder = uploadType === "audio" ? "music" : "avatars";
-  const filename = `${folder}/${address.toLowerCase()}.${ext}`;
+  const folder = uploadType === "audio" ? "music" : uploadType === "post" ? "posts" : "avatars";
+  // Posts need unique filenames (multiple images per user), avatars/music use fixed filename
+  const useRandomSuffix = uploadType === "post";
+  const filename = useRandomSuffix
+    ? `${folder}/${address.toLowerCase()}-${Date.now()}.${ext}`
+    : `${folder}/${address.toLowerCase()}.${ext}`;
 
   const blob = await put(filename, file, {
     access: "public",
-    addRandomSuffix: false,
+    addRandomSuffix: useRandomSuffix,
   });
 
   return NextResponse.json({ url: blob.url });
